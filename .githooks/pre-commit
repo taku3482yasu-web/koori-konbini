@@ -1,0 +1,3 @@
+#!/bin/sh
+# コミットの 前に テスト
+node tools/test.js || { echo "テストが 失敗したので コミットを とめた"; exit 1; }
