@@ -2,72 +2,122 @@
 const Sim = require('../js/sim.js');
 const C = Sim.C;
 
-// 何も しない: 発注は はじめの まま
+function autoOrder(s, mul = 1) {
+    for (const p of C.products) if (Sim.available(s, p.id)) s.orders[p.id] = Math.round(Sim.suggest(s, p.id) * mul);
+}
+// 手うすな コマに 人を 入れる (やる気が 下がりすぎない ように 2 コマ まで)
+function coverSlots(s, slack) {
+    const need = Sim.estSlots(s);
+    for (const m of Sim.inShop(s)) m.slots = [0, 0, 0];
+    for (let round = 0; round < 2; round++) {
+        for (const m of Sim.inShop(s).sort((a, b) => b.mood - a.mood)) {
+            if (m.slots.filter(Boolean).length > round) continue;
+            const t = [0, 1, 2].filter(k => !m.slots[k]).sort((a, b) => Sim.slotCap(s, a) / need[a] - Sim.slotCap(s, b) / need[b])[0];
+            if (Sim.slotCap(s, t) < need[t] * slack || round === 0) m.slots[t] = 1;
+        }
+    }
+}
+
+// 何も しない
 function idle() {}
 
-// ふつう: 毎週 おまかせ発注・スタッフは 足りる くらい・設備は 安い 順に 余裕が あれば
+// おまかせ: 毎週 目安で 発注・安い 施設から・足りない コマに 人を やとう
 function normal(s) {
-    for (const p of C.products) if (Sim.available(s, p.id)) s.orders[p.id] = Sim.suggest(s, p.id);
-    const info = Sim.weekInfo(s.week);
-    const need = Math.ceil(Sim.estTraffic(s, info) * 1.05 / (Sim.capacity({ ...s, staff: 0 }))) - 1;
-    Sim.setStaff(s, Math.max(1, need));
-    for (const u of [...C.upgrades].sort((a, b) => a.cost - b.cost)) if (!s.upgrades[u.id] && s.cash > u.cost + 1500000) Sim.buyUpgrade(s, u.id);
+    autoOrder(s);
+    for (const f of [...C.facilities].sort((a, b) => a.cost - b.cost)) if (s.cash > Sim.facCost(s, f.id) + 300000) Sim.buyFacility(s, f.id);
+    const need = Sim.estSlots(s);
+    if ([0, 1, 2].some(t => Sim.slotCap(s, t) < need[t]) && s.cash > 200000) {
+        const next = C.staff.find(d => !s.staff.some(m => m.id === d.id));
+        if (next) Sim.hire(s, next.id);
+    }
+    coverSlots(s, 1.0);
 }
 
-// じょうず: 天気予報と 行事を 見て 発注・スタッフは 多め・来店の ふえる 設備から 買う・宣伝も する
+// じょうず: 地域に 合う 施設・ダンジョン・限定商品・連携・値段・天気を 見た 発注・はやめの 返済
+const PLAN = {
+    tsugaku: ['fryer', 'wifi', 'eatin', 'atm'],
+    onga: ['parking', 'oden', 'fryer', 'atm'],
+    kokura: ['coffee', 'smoke', 'eatin', 'atm']
+};
 function good(s) {
-    const order = ['fryer', 'coffee', 'oden', 'kanban', 'toilet', 'camera', 'parking', 'atm', 'eatin', 'delivery', 'fridge', 'selfreg'];
-    for (const id of order) if (!s.upgrades[id] && s.cash > Sim.upgrade(id).cost + 600000) Sim.buyUpgrade(s, id);
+    const r = Sim.regionOf(s);
+    for (const id of PLAN[r.id]) if (s.cash > Sim.facCost(s, id) + 250000) Sim.buyFacility(s, id);
+    // 値段: 高いと 買わない ラインの すこし 下
+    for (const p of C.products) s.prices[p.id] = Math.round(p.price * Math.min(1.1, r.line) / 10) * 10;
+    // 予報で 見つもって 発注
     const info = Sim.weekInfo(s.week);
-    let maxT = 0;
     for (const p of C.products) {
         if (!Sim.available(s, p.id)) continue;
-        // 予報の 天気で 1 日ずつ 見つもって 平均 (発注は 1 日 同じ 数) の 1.05 倍
-        let sum = 0;
+        const base = Sim.suggest(s, p.id);
+        let f = 0;
         for (let d = 0; d < 7; d++) {
-            const f = s.forecast[d];
-            const t = Sim.estTraffic(s, info) * C.dayTraffic[d] * C.weather[f.w].traffic;
-            maxT = Math.max(maxT, t);
-            sum += t * p.rate * Sim.productFactor(s, p, f.temp, f.w, info.mi, info.event, null);
+            const fc = s.forecast[d];
+            f += C.dayTraffic[d] * C.weather[fc.w].traffic * Sim.productFactor(s, p, fc.temp, fc.w, info.event) / Sim.productFactor(s, p, C.temp[info.mi], 'sun', info.event);
         }
-        s.orders[p.id] = Math.round(sum / 7 * (p.shelf ? 1.08 : 1.25));
+        const last = s.history.length ? s.history[s.history.length - 1].products[p.id] : null;
+        const fix = last && last.open ? 1 : 1;
+        s.orders[p.id] = Math.round(base * fix * (f / 7) * (p.shelf ? 1.05 : 1.2));
     }
-    const per = Sim.capacity({ ...s, staff: 0 });
-    Sim.setStaff(s, Math.max(1, Math.ceil(maxT * 1.15 / per) - 1));
-    if (s.cash > 3000000) s.campaign = s.week > 20 ? 'lottery' : 'flyer';
+    s.markdown = 0.2;
+    // スタッフ: 3 人 そろえる → 足りなければ 接客の 強い 人
+    const want = ['tamu', 'dake', 'kotani', 'yamamou', 'ueno'];
+    const need = Sim.estSlots(s);
+    if (s.staff.length < C.maxStaff && s.cash > 300000 && ([0, 1, 2].some(t => Sim.slotCap(s, t) < need[t] * 1.05) || s.staff.length < 4)) {
+        const id = want.find(x => !s.staff.some(m => m.id === x));
+        if (id) Sim.hire(s, id);
+    }
+    // ダンジョン: 探索の 得意な 人を 1 人 (やる気が ある とき)
+    const diver = s.staff.find(m => ['dake', 'ueno', 'yasu'].includes(m.id) && m.job === 'shop' && m.mood > 45 && !m.tired);
+    if (diver && s.staff.length >= 4) Sim.sendDungeon(s, diver.id, s.week > 20 ? 'moon' : 'coast');
+    coverSlots(s, 1.1);
+    // アイテム・限定商品
+    for (const k of ['maneki', 'hieishi']) if (s.items[k] && !s.effects[k]) Sim.useItem(s, k);
+    if (s.items.genki && s.staff.some(m => m.mood < 40)) Sim.useItem(s, 'genki');
+    for (const rc of [...C.recipes].reverse()) while (Sim.craftable(s, rc.id) && (s.craft[rc.id] || 0) < 3) Sim.addCraft(s, rc.id, 1);
+    // 連携と 返済
+    if (s.cash > 600000 && s.facilities.length >= 3) Sim.setPartner(s, 'ad', true);
+    if (s.cash > 400000) Sim.setPartner(s, 'farm', true);
+    if (info.event && s.cash > 500000) Sim.bookEvent(s, 5);
+    if (s.cash > 900000) Sim.repay(s, s.cash - 700000);
 }
 
-// むちゃ: 高い 設備を すぐ 買う・発注は 2 倍
+// むちゃ: 借りられる だけ 借りて ぜんぶ 買う・やとう
 function reckless(s) {
-    for (const u of [...C.upgrades].sort((a, b) => b.cost - a.cost)) Sim.buyUpgrade(s, u.id);
-    for (const p of C.products) if (Sim.available(s, p.id)) s.orders[p.id] = Sim.suggest(s, p.id) * 2;
-    Sim.setStaff(s, 8);
-    s.campaign = 'lottery';
+    while (Sim.borrow(s));
+    for (const f of [...C.facilities].sort((a, b) => b.cost - a.cost)) Sim.buyFacility(s, f.id);
+    for (const d of C.staff) Sim.hire(s, d.id);
+    for (const m of Sim.inShop(s)) m.slots = [1, 1, 1];
+    autoOrder(s, 2);
+    for (const p of C.products) s.prices[p.id] = Math.round(p.price * 0.7 / 10) * 10;
 }
 
-function play(strategy, seed) {
-    const s = Sim.newGame('テスト', seed);
-    while (!s.over) { strategy(s); Sim.runWeek(s); }
+function play(strategy, seed, region) {
+    const s = Sim.newGame('テスト', seed, region);
+    let reports = 0;
+    while (!s.over) { strategy(s); Sim.runWeek(s); reports++; }
     const rank = Sim.ranking(s).findIndex(x => x.me) + 1;
-    return { s, rank };
+    return { s, rank, clearWeek: s.over === 'clear' ? s.week : null };
 }
 
 module.exports = { idle, normal, good, reckless, play };
 
 if (require.main === module) {
-    for (const name of ['idle', 'normal', 'good', 'reckless']) {
-        const ranks = [], totals = [], cash = [], reps = [];
-        let bankrupt = 0;
-        for (let i = 1; i <= 40; i++) {
-            const { s, rank } = play(module.exports[name], i * 7919);
-            ranks.push(rank); totals.push(s.total); cash.push(s.cash); reps.push(s.rep);
-            if (s.over === 'bankrupt') bankrupt++;
+    const N = Number(process.argv[2]) || 30;
+    for (const region of C.regions.map(r => r.id)) {
+        for (const name of ['idle', 'normal', 'good', 'reckless']) {
+            const res = { clear: 0, normal: 0, bad: 0, weeks: [], rank: 0, debt: 0, cash: 0, rep: 0, sales: 0 };
+            for (let i = 1; i <= N; i++) {
+                const { s, rank, clearWeek } = play(module.exports[name], i * 7919, region);
+                res[s.over]++;
+                if (clearWeek) res.weeks.push(clearWeek);
+                res.rank += rank / N; res.debt += s.debt / N; res.cash += s.cash / N; res.rep += s.rep / N;
+                res.sales += s.history.filter(h => !h.moved).slice(-4).reduce((a, h) => a + h.sales, 0) / 4 / N;
+            }
+            const wk = res.weeks.length ? `第${Math.round(res.weeks.reduce((a, b) => a + b, 0) / res.weeks.length)}週` : '-';
+            console.log(`${region.padEnd(8)}${name.padEnd(9)} クリア ${res.clear}/${N} (平均 ${wk}) ふつう ${res.normal} 借金のこり ${res.bad}  順位 ${res.rank.toFixed(1)}  最後の週売上 ${(res.sales / 1e4).toFixed(0)}万  借金 ${(res.debt / 1e4).toFixed(0)}万  資金 ${(res.cash / 1e4).toFixed(0)}万  評判 ${res.rep.toFixed(0)}`);
         }
-        const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
-        const first = ranks.filter(r => r === 1).length;
-        console.log(`${name.padEnd(9)} 1位 ${first}/40  平均順位 ${avg(ranks).toFixed(1)}  年間売上 ${(avg(totals) / 1e6).toFixed(0)}百万  資金 ${(avg(cash) / 1e6).toFixed(1)}百万  評判 ${avg(reps).toFixed(0)}  閉店 ${bankrupt}`);
     }
-    const s = Sim.newGame('x', 1);
+    const s = Sim.newGame('x', 1, 'tsugaku');
     while (!s.over) Sim.runWeek(s);
-    console.log('ライバル', s.rivals.map(r => `${r.name} ${(r.total / 1e6).toFixed(0)}`).join(' / '));
+    console.log('ライバル 最後の 点', Sim.ranking(s).map(r => `${r.name} ${r.score}`).join(' / '));
 }

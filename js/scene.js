@@ -1,138 +1,165 @@
-// お店の 絵 (canvas)。店長 こおりくんと、来店する シリーズの キャラ
+// お店の 中を 見下ろす 絵 (企画書: 棚・レジ・施設が ならび、スタッフと 客が 歩きまわる。客の 頭の 上に ひとこと)
 const Scene = (() => {
-    let cv, g, state = null, day = null, busy = 0.25, t = 0;
-    const W = 640, H = 260, GROUND = 214;
+    const W = 640, H = 340, T = 20;
+    let cv, g, s = null, t = 0, busy = 0.2, bubbles = [], day = null;
     const walkers = [];
-    let drops = [];
+    const DOOR = { x: 320, y: 318 };
+    const REG = { x: 70, y: 250 };
+    // 棚 (商品の id と 場所)
+    const SHELVES = [
+        { ids: ['onigiri', 'bento'], x: 190, y: 120, w: 120 },
+        { ids: ['bread', 'hotsnack'], x: 330, y: 120, w: 120 },
+        { ids: ['snack', 'daily'], x: 190, y: 185, w: 120 },
+        { ids: ['oden', 'coffee'], x: 330, y: 185, w: 120 }
+    ];
+    const FRIDGE = { ids: ['drink', 'ice'], x: 160, y: 46, w: 300 };
+    const SLOT_POS = [{ x: 500, y: 60 }, { x: 570, y: 60 }, { x: 500, y: 170 }, { x: 570, y: 170 }];
 
     function init(canvas) {
         cv = canvas;
         g = cv.getContext('2d');
-        for (let i = 0; i < 90; i++) drops.push({ x: Math.random() * W, y: Math.random() * H, v: 0.6 + Math.random() * 0.6 });
         requestAnimationFrame(loop);
     }
-    const setState = s => { state = s; };
-    // day = { w: 天気, temp, month } / busy = 0〜1 (お客さんの 多さ)
+    const setState = st => { s = st; };
     function setDay(d, b) { day = d; if (b !== undefined) busy = b; }
-
-    function spawn() {
-        const ids = CONFIG.guests;
-        const fromLeft = Math.random() < 0.5;
-        walkers.push({ id: ids[Math.floor(Math.random() * ids.length)], x: fromLeft ? -20 : W + 20, dir: fromLeft ? 1 : -1, v: 0.7 + Math.random() * 0.5, enter: Math.random() < 0.7, phase: 0, wait: 0, f: Math.random() * 10 });
+    // ひとこと (画面の どこかの 客の 上に 出す)
+    function say(text, color) {
+        const w = walkers.filter(x => x.phase > 0 && x.phase < 4);
+        const who = w.length ? w[Math.floor(Math.random() * w.length)] : null;
+        bubbles.push({ text, color: color || '#13203a', life: 110, who, x: who ? who.x : 200 + Math.random() * 200, y: who ? who.y : 200 });
     }
 
+    function spawn() {
+        const ids = ['yamamou', 'sasaki', 'kotani', 'shibata', 'ueno', 'ikekimu', 'furukawa', 'ishii', 'harigeneral', 'okagappa', 'hibikimakuri', 'hyougaryu'];
+        const sh = Math.random() < 0.3 ? FRIDGE : SHELVES[Math.floor(Math.random() * SHELVES.length)];
+        const id = day && day.gold && Math.random() < 0.15 ? 'goldDog' : ids[Math.floor(Math.random() * ids.length)];
+        walkers.push({ id, x: DOOR.x, y: H + 10, phase: 0, tx: sh.x + Math.random() * sh.w, ty: sh.y + (sh === FRIDGE ? 26 : 34), wait: 0, f: 0 });
+    }
+    function step(w, tx, ty, v = 1.3) {
+        const dx = tx - w.x, dy = ty - w.y, d = Math.hypot(dx, dy);
+        if (d < v) { w.x = tx; w.y = ty; return true; }
+        w.x += dx / d * v; w.y += dy / d * v; w.f += 0.15;
+        return false;
+    }
     function loop() {
         t++;
-        if (Math.random() < busy * 0.06 && walkers.length < 14) spawn();
+        if (Math.random() < busy * 0.07 && walkers.length < 16) spawn();
         for (const w of walkers) {
-            w.f += 0.12;
-            if (w.phase === 0) {
-                w.x += w.v * w.dir;
-                if (w.enter && Math.abs(w.x - DOOR) < 2) { w.phase = 1; w.wait = 50 + Math.random() * 60; }
-            } else if (w.phase === 1) { if (--w.wait <= 0) { w.phase = 2; } }
-            else w.x += w.v * w.dir;
+            if (w.phase === 0 && step(w, DOOR.x, DOOR.y - 20)) w.phase = 1;
+            else if (w.phase === 1 && step(w, w.tx, w.ty)) { w.phase = 2; w.wait = 40 + Math.random() * 50; }
+            else if (w.phase === 2 && --w.wait <= 0) w.phase = 3;
+            else if (w.phase === 3 && step(w, REG.x + 70 + Math.random() * 4, REG.y + 26)) { w.phase = 4; w.wait = 30; }
+            else if (w.phase === 4 && --w.wait <= 0) w.phase = 5;
+            else if (w.phase === 5 && step(w, DOOR.x, H + 20)) w.dead = true;
         }
-        for (let i = walkers.length - 1; i >= 0; i--) if (walkers[i].x < -40 || walkers[i].x > W + 40) walkers.splice(i, 1);
+        for (let i = walkers.length - 1; i >= 0; i--) if (walkers[i].dead) walkers.splice(i, 1);
+        for (const b of bubbles) { b.life--; if (b.who) { b.x = b.who.x; b.y = b.who.y; } }
+        bubbles = bubbles.filter(b => b.life > 0);
         draw();
         requestAnimationFrame(loop);
     }
 
-    const DOOR = 330;
     function draw() {
-        const w = day ? day.w : 'sun';
-        const month = day ? day.month : 4;
-        // 空
-        const sky = { sun: ['#7fc8ff', '#d8f1ff'], cloud: ['#9fb4c8', '#dfe7ef'], rain: ['#5c6f86', '#a9b7c6'], typhoon: ['#2e3a4c', '#58687c'], snow: ['#b6c4d6', '#eef3fa'] }[w];
-        const sg = g.createLinearGradient(0, 0, 0, GROUND);
-        sg.addColorStop(0, sky[0]); sg.addColorStop(1, sky[1]);
-        g.fillStyle = sg;
-        g.fillRect(0, 0, W, H);
-        if (w === 'sun') { g.fillStyle = '#ffe680'; g.beginPath(); g.arc(560, 40, 22, 0, Math.PI * 2); g.fill(); }
-        // 遠くの 街
-        g.fillStyle = 'rgba(40,60,100,0.25)';
-        [[0, 90, 60], [70, 70, 50], [130, 110, 40], [480, 80, 70], [560, 60, 80]].forEach(([x, y, ww]) => g.fillRect(x, y, ww, GROUND - y));
-        // 季節の 木
-        const leaf = month >= 3 && month <= 4 ? '#ffb7d0' : month >= 10 && month <= 11 ? '#e8823c' : month === 12 || month <= 2 ? '#c9d6e0' : '#4fae5a';
-        for (const x of [60, 600]) {
-            g.fillStyle = '#6b4a2e'; g.fillRect(x - 4, 150, 8, GROUND - 150);
-            g.fillStyle = leaf; g.beginPath(); g.arc(x, 140, 28, 0, Math.PI * 2); g.fill();
+        // 床
+        g.fillStyle = '#e9e4d8'; g.fillRect(0, 0, W, H);
+        g.fillStyle = '#ddd7c8';
+        for (let y = 30; y < 300; y += T) for (let x = (y / T) % 2 ? T : 0; x < W; x += T * 2) g.fillRect(x, y, T, T);
+        // かべ
+        g.fillStyle = '#3d8fd6'; g.fillRect(0, 0, W, 30);
+        g.fillStyle = '#8fdcff'; g.fillRect(0, 24, W, 6);
+        g.fillStyle = '#fff'; g.font = '14px "DotGothic16", monospace'; g.textAlign = 'left';
+        g.fillText(s ? s.name : '', 12, 19);
+        if (s) { g.textAlign = 'right'; const r = Sim.regionOf(s); g.fillText(`${r.icon} ${r.name}`, W - 12, 19); }
+        // 外 (歩道) と 入り口
+        g.fillStyle = '#b9b2a4'; g.fillRect(0, 300, W, H - 300);
+        g.fillStyle = '#6d7a8c'; g.fillRect(0, 298, W, 4);
+        g.fillStyle = '#9fd4f5'; g.fillRect(DOOR.x - 30, 296, 60, 8);
+        // 冷蔵ケース
+        drawShelf(FRIDGE, true);
+        SHELVES.forEach(sh => drawShelf(sh, false));
+        // レジ
+        g.fillStyle = '#8a6a48'; g.fillRect(REG.x - 50, REG.y, 160, 22);
+        g.fillStyle = '#c9a77a'; g.fillRect(REG.x - 50, REG.y, 160, 6);
+        g.fillStyle = '#2b3a4f'; g.fillRect(REG.x + 74, REG.y - 8, 18, 12);
+        // スタッフ (店に いる 人は レジの うしろ)
+        if (s) {
+            const shop = s.staff.filter(m => m.job === 'shop' && m.slots.some(Boolean));
+            shop.slice(0, 6).forEach((m, i) => Art.draw(g, Sim.staffDef(m.id).art, REG.x - 30 + i * 26, REG.y + 2, { height: 30, frame: Math.floor((t + i * 13) / 28) }));
+            // 施設
+            s.facilities.forEach((id, i) => drawFacility(id, SLOT_POS[i]));
+            for (let i = s.facilities.length; i < Sim.C.slots; i++) {
+                const p = SLOT_POS[i];
+                g.strokeStyle = 'rgba(0,0,0,0.18)'; g.setLineDash([4, 4]); g.strokeRect(p.x - 30, p.y, 60, 90); g.setLineDash([]);
+            }
+            // おにおにが 居座り
+            if (s.occupy) { Art.draw(g, 'onioni', DOOR.x + 60, 300, { height: 44, frame: Math.floor(t / 20) }); }
         }
-        // 歩道
-        g.fillStyle = '#c9c3b8'; g.fillRect(0, GROUND, W, H - GROUND);
-        for (let x = 0; x < W; x += 40) { g.fillStyle = '#bab3a6'; g.fillRect(x, GROUND, 2, H - GROUND); }
-        if (state && state.upgrades.parking) {
-            g.fillStyle = '#5b6170'; g.fillRect(470, GROUND - 4, 170, 6);
-            drawCar(560, GROUND);
-        }
-        drawStore();
-        // こおりくん (店長) は 入り口の よこ
-        Art.draw(g, 'koori', DOOR + 52, GROUND + 2, { height: 46, frame: Math.floor(t / 30) });
-        // お客さん
-        for (const p of walkers) {
-            if (p.phase === 1) continue; // お店の 中
-            Art.draw(g, p.id, p.x, GROUND + 4 + (p.dir > 0 ? 0 : 10), { height: 40, flip: p.dir < 0, frame: Math.floor(p.f) });
-        }
-        // 天気
-        if (w === 'rain' || w === 'typhoon') {
-            g.strokeStyle = 'rgba(220,235,255,0.55)';
-            g.lineWidth = 1;
-            const slant = w === 'typhoon' ? 9 : 2;
-            g.beginPath();
-            for (const d of drops) { d.y += 9 * d.v; d.x += slant * 0.6; if (d.y > H) { d.y = -10; d.x = Math.random() * W; } g.moveTo(d.x, d.y); g.lineTo(d.x + slant, d.y + 12); }
-            g.stroke();
-        }
-        if (w === 'snow') {
-            g.fillStyle = 'rgba(255,255,255,0.9)';
-            for (const d of drops) { d.y += 1.2 * d.v; d.x += Math.sin((t + d.y) / 30) * 0.4; if (d.y > H) { d.y = -5; d.x = Math.random() * W; } g.fillRect(d.x, d.y, 3, 3); }
-        }
-    }
-
-    function drawStore() {
-        const x0 = 170, x1 = 470, top = 70;
-        g.fillStyle = '#f4f7fb'; g.fillRect(x0, top, x1 - x0, GROUND - top);
-        // 氷いろの 帯 (こおりマートの 色)
-        g.fillStyle = '#3d8fd6'; g.fillRect(x0, top + 30, x1 - x0, 8);
-        g.fillStyle = '#8fdcff'; g.fillRect(x0, top + 38, x1 - x0, 6);
-        g.fillStyle = '#ffd75e'; g.fillRect(x0, top + 44, x1 - x0, 3);
-        // 看板
-        const led = state && state.upgrades.kanban;
-        g.fillStyle = led ? '#ffffff' : '#e8eef6';
-        g.fillRect(x0 + 10, top + 4, x1 - x0 - 20, 24);
-        if (led) { g.shadowColor = '#8fdcff'; g.shadowBlur = 14; }
-        g.fillStyle = '#1b3566';
-        g.font = '15px "DotGothic16", monospace';
+        // 客
+        for (const w of [...walkers].sort((a, b) => a.y - b.y)) Art.draw(g, w.id, w.x, w.y, { height: 28, frame: Math.floor(w.f) });
+        // ひとこと
+        g.font = '13px "M PLUS Rounded 1c", sans-serif';
         g.textAlign = 'center';
-        g.fillText(state ? state.name : CONFIG.defaultName, (x0 + x1) / 2, top + 21);
-        g.shadowBlur = 0;
-        // 窓 (中に 棚)
-        g.fillStyle = '#bfe6ff'; g.fillRect(x0 + 12, top + 56, 128, GROUND - top - 70);
-        g.fillStyle = '#bfe6ff'; g.fillRect(DOOR + 72, top + 56, x1 - DOOR - 84, GROUND - top - 70);
-        g.fillStyle = 'rgba(255,255,255,0.4)'; g.fillRect(x0 + 20, top + 60, 10, GROUND - top - 80);
-        const colors = ['#ff8a8a', '#ffd75e', '#8fd18f', '#8fb8ff', '#f7a8e0'];
-        for (let r = 0; r < 3; r++) {
-            g.fillStyle = '#8a95a8'; g.fillRect(x0 + 16, top + 78 + r * 22, 120, 3);
-            for (let i = 0; i < 12; i++) { g.fillStyle = colors[(i + r) % colors.length]; g.fillRect(x0 + 18 + i * 10, top + 68 + r * 22, 7, 10); }
+        for (const b of bubbles) {
+            const wdt = g.measureText(b.text).width + 14, x = Math.max(wdt / 2, Math.min(W - wdt / 2, b.x)), y = b.y - 40 - (110 - b.life) * 0.1;
+            g.globalAlpha = Math.min(1, b.life / 20);
+            g.fillStyle = '#fff'; roundRect(x - wdt / 2, y - 16, wdt, 22, 8); g.fill();
+            g.beginPath(); g.moveTo(x - 4, y + 6); g.lineTo(x + 4, y + 6); g.lineTo(x, y + 12); g.fill();
+            g.fillStyle = b.color; g.fillText(b.text, x, y);
+            g.globalAlpha = 1;
         }
-        // 設備の 見た目
-        if (state && state.upgrades.atm) { g.fillStyle = '#3d8fd6'; g.fillRect(DOOR + 80, top + 74, 22, 40); g.fillStyle = '#d8f1ff'; g.fillRect(DOOR + 84, top + 80, 14, 9); }
-        if (state && state.upgrades.eatin) { g.fillStyle = '#c58a52'; g.fillRect(DOOR + 108, top + 100, 26, 4); g.fillRect(DOOR + 112, top + 104, 3, 16); g.fillRect(DOOR + 127, top + 104, 3, 16); }
-        if (state && state.upgrades.coffee) { g.fillStyle = '#5a3b26'; g.fillRect(x0 + 112, top + 120, 20, 22); g.fillStyle = '#ffd75e'; g.fillRect(x0 + 116, top + 124, 12, 4); }
-        if (state && state.upgrades.oden && day && day.month >= 10 || state && state.upgrades.oden && day && day.month <= 3) { g.fillStyle = '#c0a060'; g.fillRect(x0 + 80, top + 128, 26, 12); }
-        // 入り口
-        g.fillStyle = '#9fd4f5'; g.fillRect(DOOR - 24, top + 60, 48, GROUND - top - 60);
-        g.fillStyle = '#5d6f86'; g.fillRect(DOOR - 1, top + 60, 2, GROUND - top - 60);
-        // のぼり (行事の 週)
-        if (day && day.event) {
-            g.fillStyle = '#e04a4a'; g.fillRect(x0 - 26, 120, 18, 76);
-            g.fillStyle = '#5d4a3a'; g.fillRect(x0 - 28, 116, 2, 98);
-            g.fillStyle = '#fff'; g.font = '12px "DotGothic16", monospace';
-            [...day.event.slice(0, 5)].forEach((ch, i) => g.fillText(ch, x0 - 17, 136 + i * 14));
+        // 天気 (左上に 小さく)
+        if (day) {
+            g.fillStyle = 'rgba(11,18,34,0.7)'; roundRect(8, 36, 112, 26, 8); g.fill();
+            g.fillStyle = '#fff'; g.textAlign = 'left'; g.font = '13px "M PLUS Rounded 1c", sans-serif';
+            g.fillText(`${Sim.C.weather[day.w].icon} ${day.temp}℃ ${day.label || ''}`, 16, 54);
         }
     }
-    function drawCar(x, y) {
-        g.fillStyle = '#e05a5a'; g.fillRect(x - 34, y - 24, 68, 16); g.fillRect(x - 20, y - 36, 40, 14);
-        g.fillStyle = '#bfe6ff'; g.fillRect(x - 16, y - 33, 14, 10); g.fillRect(x + 2, y - 33, 14, 10);
-        g.fillStyle = '#222'; g.beginPath(); g.arc(x - 20, y - 6, 7, 0, 7); g.arc(x + 20, y - 6, 7, 0, 7); g.fill();
+    function roundRect(x, y, w, h, r) {
+        g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
     }
-    return { init, setState, setDay };
+    // 棚: 商品の 色で 期限が 分かる (新しい = 緑・そろそろ = 黄・今日まで = 赤)。日持ちする 商品は 青
+    function drawShelf(sh, fridge) {
+        g.fillStyle = fridge ? '#cfe9f7' : '#9aa6b8';
+        g.fillRect(sh.x, sh.y, sh.w, fridge ? 22 : 26);
+        g.fillStyle = fridge ? '#8fc6e6' : '#7a869a';
+        g.fillRect(sh.x, sh.y + (fridge ? 18 : 22), sh.w, 4);
+        const half = sh.w / sh.ids.length;
+        sh.ids.forEach((id, k) => {
+            const p = Sim.product(id);
+            if (!s || !Sim.available(s, id)) { g.fillStyle = 'rgba(0,0,0,0.15)'; g.fillRect(sh.x + k * half + 4, sh.y + 4, half - 8, 12); return; }
+            const st = s.stock[id] || [];
+            const total = st.reduce((a, b) => a + b.q, 0);
+            const full = Math.min(1, total / Math.max(1, p.shelf ? (s.orders[id] || 1) * 1.2 : Sim.capOf(s, p) * 0.5));
+            const n = Math.round(full * 8);
+            for (let i = 0; i < 8; i++) {
+                let col = '#5b6b80';
+                if (i < n) {
+                    if (!p.shelf) col = fridge ? '#3d8fd6' : '#6aa0e8';
+                    else {
+                        const b = st[Math.min(st.length - 1, Math.floor(i / 8 * st.length))];
+                        const left = b ? p.shelf - b.age : p.shelf;
+                        col = left <= 1 ? '#e05a5a' : left === 2 ? '#f0c040' : '#5bbf6a';
+                    }
+                } else col = 'rgba(0,0,0,0.12)';
+                g.fillStyle = col;
+                g.fillRect(sh.x + k * half + 5 + i * (half - 10) / 8, sh.y + 5, (half - 10) / 8 - 2, 11);
+            }
+            g.font = '14px sans-serif'; g.textAlign = 'center';
+            g.fillText(p.icon, sh.x + k * half + half / 2, sh.y + (fridge ? 38 : 42));
+        });
+    }
+    function drawFacility(id, p) {
+        const f = Sim.facility(id);
+        g.fillStyle = '#f7f3ea'; g.fillRect(p.x - 30, p.y, 60, 90);
+        g.strokeStyle = '#c8bfae'; g.strokeRect(p.x - 30, p.y, 60, 90);
+        if (id === 'eatin') { g.fillStyle = '#c58a52'; g.fillRect(p.x - 22, p.y + 30, 44, 20); g.fillStyle = '#8a5a32'; [[-22, 56], [12, 56], [-22, 18], [12, 18]].forEach(([dx, dy]) => g.fillRect(p.x + dx, p.y + dy, 10, 8)); }
+        else if (id === 'smoke') { g.fillStyle = 'rgba(160,170,180,0.5)'; g.fillRect(p.x - 28, p.y + 2, 56, 86); }
+        else if (id === 'parking') { g.fillStyle = '#5b6170'; g.fillRect(p.x - 28, p.y + 2, 56, 86); g.fillStyle = '#fff'; g.fillRect(p.x - 1, p.y + 6, 2, 78); }
+        else if (id === 'atm') { g.fillStyle = '#3d8fd6'; g.fillRect(p.x - 12, p.y + 20, 24, 40); g.fillStyle = '#d8f1ff'; g.fillRect(p.x - 8, p.y + 26, 16, 10); }
+        g.font = '24px sans-serif'; g.textAlign = 'center';
+        g.fillText(f.icon, p.x, p.y + 50);
+        g.fillStyle = '#13203a'; g.font = '11px "M PLUS Rounded 1c", sans-serif';
+        g.fillText(f.name.slice(0, 7), p.x, p.y + 84);
+    }
+    return { init, setState, setDay, say };
 })();

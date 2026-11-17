@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>こおりくんの コンビニ物語</title>
-<meta name="description" content="こおりくんが 店長の コンビニを 1 年 経営して、おかおか 1 の コンビニを めざす">
+<title>こおりくんのコンビニ（仮）</title>
+<meta name="description" content="就活に 失敗した こおりくんが 借金 100 万円で はじめた コンビニを、1 年で おかおか 1 に する">
 <meta name="theme-color" content="#0b1222">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' shape-rendering='crispEdges'%3E%3Crect width='14' height='12' fill='%231b3566'/%3E%3Crect x='1' y='1' width='12' height='10' fill='%23c6f0ff'/%3E%3Crect x='4' y='4' width='1' height='2' fill='%230e1626'/%3E%3Crect x='9' y='4' width='1' height='2' fill='%230e1626'/%3E%3Crect x='6' y='7' width='2' height='1' fill='%230e1626'/%3E%3Crect x='2' y='12' width='3' height='2' fill='%231b3566'/%3E%3Crect x='9' y='12' width='3' height='2' fill='%231b3566'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,9 +18,9 @@
 <section id="title" class="screen">
     <div class="title-box">
         <canvas id="title-art" width="320" height="140"></canvas>
-        <h1><small>こおりくんシリーズ</small>こおりくんの<br>コンビニ物語</h1>
-        <p class="lead">店長 こおりくんと 1 年間 お店を まわして、<br>おかおか 1 の コンビニを めざそう！</p>
-        <label class="name-row">お店の 名前 <input id="store-name" maxlength="16"></label>
+        <h1><small>こおりくんシリーズ</small>こおりくんの<br>コンビニ<span class="kari">（仮）</span></h1>
+        <p class="lead">借金 100 万円で はじめた コンビニを、<br>1 年で おかおか 1 に しよう！</p>
+        <label class="name-row">お店の 名前 <input id="store-name" maxlength="14"></label>
         <div class="title-buttons">
             <button id="new-button" class="big">はじめから</button>
             <button id="continue-button" class="big sub" hidden>つづきから</button>
@@ -28,14 +28,33 @@
         <details class="howto">
             <summary>あそびかた</summary>
             <ul>
-                <li>1 回の 「えいぎょう」で 1 週間 すすむ。4 月から 3 月まで 52 週。</li>
-                <li>商品は 1 日に 入れる 数を きめる。おにぎり・お弁当は その日の うちに、パンは 2 日で 廃棄。足りないと 売り逃しで 評判が 下がる。</li>
-                <li>天気予報と 行事を 見て 発注を かえよう。暑いと ドリンク・アイス、寒いと おでん・ホットスナック。</li>
-                <li>お客さんが ふえたら スタッフを やとう。レジが まにあわないと お客さんは 帰って しまう。</li>
-                <li>もうけで 設備を ふやすと 来店が ふえる。1 年の 売上が おかおか市で 1 番 なら クリア！</li>
-                <li>資金が −100 万円を 下回ると 閉店。</li>
+                <li>1 ターン = 1 週間。「発注と 値段 → シフトと ダンジョン → 営業 → まとめ」を 52 回 くり返す。</li>
+                <li>コンビニランキングで 1 位に なったら クリア！ 点は 直近 4 週の 売上 (万円) と 評判で きまる。</li>
+                <li>値段は 自分で きめる。地域ごとに「高いと 買わない」ラインが ちがう。客の ひとこと「高っ…」「安っ！」を 見よう。</li>
+                <li>おにぎり・お弁当は 2 日、パンは 3 日で 期限切れ。期限 今日までの 商品は 値下げ できる。期限切れは 廃棄か 子ども食堂へ。</li>
+                <li>施設は 4 つ まで。施設ごとに 集まる 客が ちがう。地域の 客に 合わせよう。</li>
+                <li>スタッフを ダンジョンに 出すと 特産品や 便利アイテムを 持って 帰る。その あいだ 店には 立てない。</li>
+                <li>月末は おにおにバンクへの 返済 (最初の 1 か月は つけ)。払えないと おにおにが 店に 居座る。</li>
             </ul>
         </details>
+    </div>
+</section>
+
+<!-- お話 -->
+<section id="story" class="screen" hidden>
+    <div class="story-box">
+        <canvas id="story-art" width="320" height="130"></canvas>
+        <div class="story-talk"><b id="story-name"></b><p id="story-text"></p></div>
+        <div class="story-buttons"><button id="story-skip" class="mini">とばす</button><button id="story-next" class="big">つぎへ ▶</button></div>
+    </div>
+</section>
+
+<!-- 出店地を えらぶ -->
+<section id="region" class="screen" hidden>
+    <div class="region-box">
+        <h2>どこに 店を 作る？</h2>
+        <p class="note">地域で 来る 客・売れる 商品・特産品が ちがう。好みは 売って みないと 分からない。あとで お金を 払えば 移転も できる。</p>
+        <div id="region-list" class="region-list"></div>
     </div>
 </section>
 
@@ -44,39 +63,46 @@
     <header class="top">
         <div class="when"><b id="when-week"></b><span id="when-date"></span></div>
         <div class="stat"><span>資金</span><b id="stat-cash"></b></div>
+        <div class="stat"><span>借金</span><b id="stat-debt"></b></div>
         <div class="stat"><span>評判</span><b id="stat-rep"></b></div>
         <div class="stat"><span>順位</span><b id="stat-rank"></b></div>
     </header>
     <div class="scene-wrap">
-        <canvas id="scene" width="640" height="260"></canvas>
+        <canvas id="scene" width="640" height="340"></canvas>
         <div id="ticker" class="ticker" hidden></div>
         <button id="skip-button" class="skip" hidden>とばす ▶▶</button>
     </div>
     <div id="talk" class="talk"></div>
 
     <nav class="tabs">
-        <button data-tab="order" class="on">🍙 発注</button>
-        <button data-tab="staff">🧑‍🤝‍🧑 スタッフ・宣伝</button>
-        <button data-tab="shop">🛠 設備</button>
+        <button data-tab="order" class="on">🍙 発注・値段</button>
+        <button data-tab="staff">👥 シフト・ダンジョン</button>
+        <button data-tab="shop">🛠 施設</button>
+        <button data-tab="partner">🤝 連携</button>
+        <button data-tab="bank">🏦 銀行</button>
+        <button data-tab="area">🗾 地域</button>
         <button data-tab="rank">🏆 ランキング</button>
     </nav>
     <div class="panel" id="tab-order"></div>
     <div class="panel" id="tab-staff" hidden></div>
     <div class="panel" id="tab-shop" hidden></div>
+    <div class="panel" id="tab-partner" hidden></div>
+    <div class="panel" id="tab-bank" hidden></div>
+    <div class="panel" id="tab-area" hidden></div>
     <div class="panel" id="tab-rank" hidden></div>
 
     <div class="go-bar">
         <span id="cost-note"></span>
-        <button id="go-button" class="big">1 週間 えいぎょう する ▶</button>
+        <button id="go-button" class="big">1 週間 営業する ▶</button>
     </div>
 </section>
 
-<!-- 週の 報告・エンディング -->
 <div id="modal" class="modal" hidden><div class="modal-box" id="modal-box"></div></div>
 
 <script src="js/config.js"></script>
 <script src="js/sim.js"></script>
 <script src="js/art-legacy.js"></script>
+<script src="js/art-extra.js"></script>
 <script src="js/pixel-hd.js"></script>
 <script src="js/art.js"></script>
 <script src="js/scene.js"></script>
