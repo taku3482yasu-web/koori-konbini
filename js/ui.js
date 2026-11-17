@@ -101,6 +101,7 @@
 
     function start() {
         show('game');
+        Sound.play('day');
         Scene.setState(s);
         save();
         render();
@@ -473,6 +474,8 @@
             const slot = Sim.runSlot(s);
             save();
             if (skip) continue;
+            Sound.play(t === 2 ? 'night' : 'day');
+            if (t === 0) Sound.se('chime');
             // できごと (その 日に 出す)
             let special = null, specialSay = null;
             if (t === 1 && d === w.goldDay) { special = 'goldDog'; specialSay = 'ゴールド金面犬だ！ 大入り！'; }
@@ -492,6 +495,7 @@
                 for (const a of al) { if (a.kind === 'queue') alerted.add(`queue:${s.wk.d}`); for (const id of a.ids) alerted.add(`${a.kind}:${id}`); }
                 paused = true;
                 pauseWhy = alertText(al);
+                Sound.se('alert');
                 say('furukawa', pauseWhy);
             }
         }
@@ -637,7 +641,7 @@
         if (!id) return;
         const p = Sim.product(id);
         if (k === 'price') { Sim.setPrice(s, id, s.prices[id] + Number(b.dataset.d) * C.priceStep); if (!running) renderOrder(Sim.weekInfo(s.week)); }
-        else if (k === 'stock') { const n = Sim.midStock(s, id); say('tamu', n ? `${p.name}を ${n} こ 棚に 出したよ！` : 'もう 出せる 力が のこって ない…'); }
+        else if (k === 'stock') { const n = Sim.midStock(s, id); if (n) Sound.se('stock'); say('tamu', n ? `${p.name}を ${n} こ 棚に 出したよ！` : 'もう 出せる 力が のこって ない…'); }
         else if (k === 'cook') { Sim.midCook(s); say('yamamou', 'まかせて！ どんどん 作るよ！'); }
         else if (k === 'rush') { const q = Math.max(10, Math.round(Sim.dailyNeed(s, id) * 0.5 / 10) * 10); if (Sim.midRush(s, id, q)) say('nozoema', `${p.name} ${q} こ、あしたの 朝 とどけるぜ！`); }
         save();
@@ -664,7 +668,14 @@
         return ['いい 1 週間 だった。この 調子で いこう！', 'ランキングも 少しずつ 見えて きたね。', '地域の 好みを 見て 品ぞろえを かえて みよう。'][r.week % 3];
     }
 
+    let prevRank = null;
     function showReport(r) {
+        // 音: まとめの 曲・もうけ・ランキングが 上がった・月末の 取り立て
+        Sound.play(r.month && !r.month.grace ? 'bank' : 'report');
+        setTimeout(() => { if (r.profit > 0) Sound.se('coin'); }, 300);
+        if (prevRank !== null && r.rank < prevRank) setTimeout(() => Sound.se('rankup'), 900);
+        if (r.month && !r.month.grace && r.month.paid) setTimeout(() => Sound.se('onioni'), 1500);
+        prevRank = r.rank;
         const prow = C.products.filter(p => r.products[p.id]).map(p => {
             const x = r.products[p.id];
             const pf = x.sales - (x.cost || 0);
@@ -711,6 +722,7 @@
             $('modal').hidden = true;
             if (s.over) ending();
             else {
+                Sound.play('day');
                 render();
                 const ev = Sim.weekInfo(s.week).event;
                 // 仕入れが 上がって もうけが へった 商品が あれば ふるカワが ひとこと (2026-11-17 ユーザー決定)
@@ -731,6 +743,7 @@
     };
     function ending() {
         const e = ENDINGS[s.over];
+        Sound.play('ending');
         clearSave();
         story(e.lines, () => {
             show('game');
@@ -754,6 +767,16 @@
             $('again-button').addEventListener('click', () => { $('modal').hidden = true; title(); });
         });
     }
+
+    // ----- 音の 設定 (音量・ミュート) -----
+    $('snd-vol').value = Math.round(Sound.vol * 100);
+    $('snd-mute').checked = Sound.mute;
+    const sndIcon = () => { $('snd-btn').textContent = Sound.mute || !Sound.vol ? '🔇' : '🔊'; };
+    sndIcon();
+    $('snd-btn').addEventListener('click', e => { e.stopPropagation(); $('snd-panel').hidden = !$('snd-panel').hidden; });
+    $('snd-vol').addEventListener('input', e => { Sound.setVol(Number(e.target.value) / 100); sndIcon(); });
+    $('snd-mute').addEventListener('change', e => { Sound.setMute(e.target.checked); sndIcon(); });
+    document.addEventListener('click', e => { if (!e.target.closest('.snd')) $('snd-panel').hidden = true; });
 
     Scene.init($('scene'));
     title();

@@ -410,3 +410,9 @@ tr.cat th { text-align: left; padding: 10px 4px 4px; color: var(--gold); font-si
     .ticker { font-size: 12px; padding: 4px 8px; left: 4px; right: 4px; bottom: 4px; }
     .live-panel { margin: 0 8px 10px; }
 }
+
+/* 音の 設定 (2026-11-17 ユーザー指定) */
+.snd { position: absolute; right: 8px; top: 36px; z-index: 3; }
+.snd > button { width: 36px; height: 36px; border-radius: 50%; border: none; background: rgba(11, 18, 34, 0.7); font-size: 18px; }
+.snd-panel { position: absolute; right: 0; top: 42px; display: grid; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); font-size: 13px; white-space: nowrap; }
+.snd-panel input[type=range] { width: 120px; vertical-align: middle; }

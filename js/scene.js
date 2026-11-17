@@ -53,7 +53,7 @@ const Scene = (() => {
 
     // ----- 1 コマ ぶんの 客を 出す (3 章) -----
     // slot = Sim.runSlot の かえり値、ms = この コマを 見せる 時間
-    let plan = [];
+    let plan = [], lastBeep = 0;
     function playSlot(slot, ms, extra = {}) {
         const n = Math.max(2, Math.min(16, Math.round(slot.customers / 28)));
         const outRate = slot.outs.length ? Math.min(0.45, 0.08 + slot.outs.length * 0.06) : 0;
@@ -106,7 +106,7 @@ const Scene = (() => {
                     else if (w.said && --w.wait <= 0) { w.phase = 6; }
                 }
             }
-            else if (w.phase === 4 && --w.wait <= 0) w.phase = 5;
+            else if (w.phase === 4 && --w.wait <= 0) { w.phase = 5; if (live && typeof Sound !== 'undefined' && t - lastBeep > 8) { lastBeep = t; Sound.se('beep'); } }
             else if ((w.phase === 5 || w.phase === 6) && step(w, DOOR.x + (w.phase === 6 ? 20 : -20), H + 20, w.phase === 6 ? 1.7 : 1.4)) w.dead = true;
         }
         for (let i = walkers.length - 1; i >= 0; i--) if (walkers[i].dead) walkers.splice(i, 1);
