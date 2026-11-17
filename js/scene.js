@@ -13,7 +13,8 @@ const Scene = (() => {
         { ids: ['oden', 'coffee'], x: 330, y: 185, w: 120 }
     ];
     const FRIDGE = { ids: ['drink', 'ice'], x: 160, y: 46, w: 300 };
-    const SLOT_POS = [{ x: 500, y: 60 }, { x: 570, y: 60 }, { x: 500, y: 170 }, { x: 570, y: 170 }];
+    const SLOT_POS = [{ x: 500, y: 44 }, { x: 570, y: 44 }, { x: 500, y: 128 }, { x: 570, y: 128 }, { x: 500, y: 212 }, { x: 570, y: 212 }];
+    const FH = 76; // 施設の 絵の 高さ
 
     function init(canvas) {
         cv = canvas;
@@ -103,9 +104,10 @@ const Scene = (() => {
             });
             // 施設
             s.facilities.forEach((id, i) => drawFacility(id, SLOT_POS[i]));
-            for (let i = s.facilities.length; i < Sim.C.slots; i++) {
+            const free = Math.min(Sim.C.floor - Sim.floorUsed(s), Sim.C.maxFacilities - s.facilities.length);
+            for (let i = s.facilities.length; i < s.facilities.length + free; i++) {
                 const p = SLOT_POS[i];
-                g.strokeStyle = 'rgba(0,0,0,0.18)'; g.setLineDash([4, 4]); g.strokeRect(p.x - 30, p.y, 60, 90); g.setLineDash([]);
+                g.strokeStyle = 'rgba(0,0,0,0.18)'; g.setLineDash([4, 4]); g.strokeRect(p.x - 30, p.y, 60, FH); g.setLineDash([]);
             }
             // おにおにが 居座り
             if (s.occupy) { Art.draw(g, 'onioni', DOOR.x + 60, 300, { height: 44, frame: Math.floor(t / 20) }); }
@@ -143,6 +145,8 @@ const Scene = (() => {
         sh.ids.forEach((id, k) => {
             const p = Sim.product(id);
             if (!s || !Sim.available(s, id)) { g.fillStyle = 'rgba(0,0,0,0.15)'; g.fillRect(sh.x + k * half + 4, sh.y + 4, half - 8, 12); return; }
+            const units = Sim.shelfUnits(s, id);
+            if (units > 1 && !p.cook && !p.self) { g.fillStyle = '#13203a'; g.font = '10px "M PLUS Rounded 1c", sans-serif'; g.textAlign = 'right'; g.fillText(`×${units}`, sh.x + (k + 1) * half - 2, sh.y - 2); }
             const st = s.stock[id] || [];
             const total = st.reduce((a, b) => a + b.q, 0);
             const full = Math.min(1, total / Math.max(1, p.shelf ? (s.orders[id] || 1) * 1.2 : Sim.capOf(s, p) * 0.5));
@@ -166,16 +170,16 @@ const Scene = (() => {
     }
     function drawFacility(id, p) {
         const f = Sim.facility(id);
-        g.fillStyle = '#f7f3ea'; g.fillRect(p.x - 30, p.y, 60, 90);
-        g.strokeStyle = '#c8bfae'; g.strokeRect(p.x - 30, p.y, 60, 90);
-        if (id === 'eatin') { g.fillStyle = '#c58a52'; g.fillRect(p.x - 22, p.y + 30, 44, 20); g.fillStyle = '#8a5a32'; [[-22, 56], [12, 56], [-22, 18], [12, 18]].forEach(([dx, dy]) => g.fillRect(p.x + dx, p.y + dy, 10, 8)); }
-        else if (id === 'smoke') { g.fillStyle = 'rgba(160,170,180,0.5)'; g.fillRect(p.x - 28, p.y + 2, 56, 86); }
-        else if (id === 'parking') { g.fillStyle = '#5b6170'; g.fillRect(p.x - 28, p.y + 2, 56, 86); g.fillStyle = '#fff'; g.fillRect(p.x - 1, p.y + 6, 2, 78); }
-        else if (id === 'atm') { g.fillStyle = '#3d8fd6'; g.fillRect(p.x - 12, p.y + 20, 24, 40); g.fillStyle = '#d8f1ff'; g.fillRect(p.x - 8, p.y + 26, 16, 10); }
-        g.font = '24px sans-serif'; g.textAlign = 'center';
-        g.fillText(f.icon, p.x, p.y + 50);
+        g.fillStyle = '#f7f3ea'; g.fillRect(p.x - 30, p.y, 60, FH);
+        g.strokeStyle = '#c8bfae'; g.strokeRect(p.x - 30, p.y, 60, FH);
+        if (id === 'eatin') { g.fillStyle = '#c58a52'; g.fillRect(p.x - 22, p.y + 24, 44, 16); g.fillStyle = '#8a5a32'; [[-22, 44], [12, 44], [-22, 14], [12, 14]].forEach(([dx, dy]) => g.fillRect(p.x + dx, p.y + dy, 10, 7)); }
+        else if (id === 'smoke') { g.fillStyle = 'rgba(160,170,180,0.5)'; g.fillRect(p.x - 28, p.y + 2, 56, FH - 4); }
+        else if (id === 'parking') { g.fillStyle = '#5b6170'; g.fillRect(p.x - 28, p.y + 2, 56, FH - 4); g.fillStyle = '#fff'; g.fillRect(p.x - 1, p.y + 6, 2, FH - 12); }
+        else if (id === 'atm') { g.fillStyle = '#3d8fd6'; g.fillRect(p.x - 12, p.y + 14, 24, 34); g.fillStyle = '#d8f1ff'; g.fillRect(p.x - 8, p.y + 20, 16, 9); }
+        g.font = '22px sans-serif'; g.textAlign = 'center';
+        g.fillText(f.icon, p.x, p.y + 42);
         g.fillStyle = '#13203a'; g.font = '11px "M PLUS Rounded 1c", sans-serif';
-        g.fillText(f.name.slice(0, 7), p.x, p.y + 84);
+        g.fillText(f.name.slice(0, 7), p.x, p.y + FH - 6);
     }
     return { init, setState, setDay, say };
 })();

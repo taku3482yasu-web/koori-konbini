@@ -76,7 +76,7 @@
             { id: 'onigiri', name: 'おにぎり', icon: '🍙', price: 150, cost: 95, shelf: 2, cap: 120 },
             { id: 'bento', name: 'お弁当', icon: '🍱', price: 520, cost: 360, shelf: 2, cap: 70 },
             { id: 'bread', name: 'パン', icon: '🥐', price: 170, cost: 110, shelf: 3, cap: 90 },
-            { id: 'drink', name: 'ドリンク', icon: '🥤', price: 150, cost: 85, shelf: 0, cap: 300, temp: [0.7, 0.017] },
+            { id: 'drink', name: 'ドリンク', icon: '🥤', price: 150, cost: 85, shelf: 0, cap: 150, temp: [0.7, 0.017] },
             { id: 'snack', name: 'お菓子', icon: '🍫', price: 150, cost: 95, shelf: 0, cap: 160 },
             { id: 'daily', name: '日用品・雑誌', icon: '🧴', price: 350, cost: 250, shelf: 0, cap: 90 },
             { id: 'ice', name: 'アイス', icon: '🍦', price: 180, cost: 105, shelf: 0, cap: 90, iceCurve: true },
@@ -109,7 +109,11 @@
         localPerWeek: 0.5,         // ★ 地域から 毎週 とどく 特産品 (0.5 = 2 週に 1 つ)
 
         // ----- 便利施設 (企画書: 店の 広さに 限り・施設ごとに 集まる 客が ちがう) -----
-        slots: 4,                  // ★ 置ける 数
+        // 店の 床 (2026-11-17 ユーザー指定: 棚や 施設の 撤去)。棚 1 台と 施設 1 つで 1 マス ずつ。はじめは 棚 8 台で のこり 4 マス ★
+        floor: 12,
+        maxFacilities: 6,          // 施設は 6 つ まで (見下ろしの 絵に おける 数)
+        shelf: { cost: 80000, refund: 0.3 }, // 棚を 1 台 ふやす / 撤去すると もどる 割合 ★
+        startShelves: { onigiri: 1, bento: 1, bread: 1, drink: 2, snack: 1, daily: 1, ice: 1 }, // 商品の cap は 棚 1 台ぶん
         facilities: [
             { id: 'eatin', name: 'イートインルーム', icon: '🪑', cost: 800000, upkeep: 15000, seg: { student: 1.25, worker: 1.1 }, capMul: 0.9, text: '学生・ひとり飯が 来る', warn: '長居で レジの 回転が 落ちる' },
             { id: 'smoke', name: 'たばこ室', icon: '🚬', cost: 600000, upkeep: 8000, seg: { worker: 1.2, driver: 1.3, family: 0.8 }, text: 'サラリーマン・トラック運転手が 来る', warn: '家族連れが へる' },
@@ -137,12 +141,22 @@
             { id: 'yamamou', name: 'やまもぅ', art: 'yamamou', st: [2, 3, 2, 5, 2], pay: 1200, text: '料理が うまい' },
             { id: 'ishii', name: 'イシイー', art: 'ishii', st: [1, 2, 4, 2, 5], pay: 950, text: '遺跡の 達人。お店は にがて' },
             { id: 'ikekimu', name: 'いけきむ', art: 'ikekimu', st: [3, 4, 4, 2, 3], pay: 1100, text: 'なんでも そつなく' },
+            // ----- 季節の レアスタッフ (2026-11-17 ユーザー指定: 特定の 季節・時期にしか やとえない。給料は 高いが 役に立ち、ダンジョンでも 強い) -----
+            // rare.months = 応募が 来る 月、perk = 店に いる (シフトに 入る) と 売れる 商品の 倍率 ★ 人・月・数値は Claude
+            { id: 'harukazedori', name: 'ハルカゼドリ', art: 'harukazedori', st: [5, 4, 4, 3, 5], pay: 1900, text: '春風と いっしょに 来る。引っ越しの 季節の 味方', rare: { months: [3, 4], perk: { daily: 1.25, drink: 1.1 }, perkText: '日用品 +25%・ドリンク +10%' } },
+            { id: 'sakurarisu', name: 'サクラリス', art: 'sakurarisu', st: [5, 5, 3, 4, 5], pay: 2000, text: 'もうすぐ 春ですよ～。お花見の 季節だけ', rare: { months: [4, 5], perk: { onigiri: 1.2, bento: 1.15 }, perkText: 'おにぎり +20%・お弁当 +15%' } },
+            { id: 'kakigoora', name: 'カキゴーラ', art: 'kakigoora', st: [4, 5, 4, 3, 5], pay: 2000, text: '夏だけ 来る ひんやり 店員', rare: { months: [7, 8], perk: { ice: 1.35, drink: 1.15 }, perkText: 'アイス +35%・ドリンク +15%' } },
+            { id: 'otohimedai', name: 'オトヒメダイ', art: 'otohimedai', st: [5, 3, 3, 4, 6], pay: 2300, text: '海の 季節に 竜宮城から。ダンジョンが とくい', rare: { months: [8], perk: { bento: 1.15, snack: 1.1 }, perkText: 'お弁当 +15%・お菓子 +10%', dungeon: 1.3 } },
+            { id: 'tsukiusagi', name: 'ツキウサギ', art: 'tsukiusagi', st: [4, 4, 5, 5, 5], pay: 2000, text: 'お月見の ころ だけ。もちつきが うまい', rare: { months: [9, 10], perk: { snack: 1.25, hotsnack: 1.1 }, perkText: 'お菓子 +25%・ホットスナック +10%' } },
+            { id: 'obakekabocha', name: 'オバケカボチャ', art: 'obakekabocha', st: [4, 4, 4, 5, 6], pay: 2200, text: 'ハロウィンの 10 月 だけ あらわれる', rare: { months: [10], perk: { snack: 1.3, hotsnack: 1.2 }, perkText: 'お菓子 +30%・ホットスナック +20%', dungeon: 1.2 } },
+            { id: 'yukionnan', name: 'ユキオンナン', art: 'yukionnan', st: [5, 4, 4, 5, 6], pay: 2300, text: '雪の 季節に。おでんの 火加減が 名人級', rare: { months: [12, 1, 2], perk: { oden: 1.3, hotsnack: 1.15 }, perkText: 'おでん +30%・ホットスナック +15%' } },
+            { id: 'penguinknight', name: 'ペンギンナイト', art: 'penguinknight', st: [6, 5, 5, 3, 6], pay: 2500, text: '冬の 騎士。レジも 品出しも ダンジョンも 強い', rare: { months: [1, 2], perk: { drink: 1.1, daily: 1.1 }, perkText: 'ドリンク +10%・日用品 +10%', dungeon: 1.3 } },
             { id: 'ueno', name: 'マッスルウエノーブル', art: 'ueno', st: [2, 5, 2, 1, 5], pay: 1400, text: '筋肉で 品出しも 探索も' }
         ],
         startStaff: ['koori', 'yasu'],
         hoursPerSlot: 5,
         // アルバイト募集 (2026-11-17 ユーザー指定): 求人を 出すと つぎの 週に 応募が 来る。その 週の うちに やとわないと ほかへ 行く
-        recruit: { cost: 20000, min: 1, max: 3 },
+        recruit: { cost: 20000, min: 1, max: 3, rareChance: 0.5 }, // rareChance = 季節の レアスタッフが 応募に まざる 確率 ★
         maxStaff: 6,               // こおりくんを ふくめて
         // ----- 持ち場 (2026-11-17 ユーザー指定: スタッフの 中でも 役割が ある。向き 不向きは スタッフで ちがうが、どこに 置くかは 自分で きめる) -----
         // stat = つかう 能力 (st の 番号)。ほかの 持ち場の 人も roleHelp だけ 手伝う ★

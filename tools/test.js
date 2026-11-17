@@ -62,7 +62,7 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
 {
     const s = fresh(); s.cash = 1e8;
     for (const f of C.facilities) Sim.buyFacility(s, f.id);
-    check(`施設は ${C.slots} つ まで`, s.facilities.length === C.slots);
+    check('施設は 床の あいて いる マス まで', s.facilities.length === C.floor - 8 && Sim.floorUsed(s) === C.floor);
     check('駐車場は 駅前で 高い', Sim.facCost(fresh('kokura'), 'parking') > Sim.facCost(fresh('onga'), 'parking') * 3);
     const n = fresh(); n.cash = 1e8; Sim.buyFacility(n, 'coffee'); orderAll(n);
     check('コーヒーマシンで コーヒーが 売れる', Sim.available(n, 'coffee') && Sim.runWeek(n).products.coffee.sold > 0);
@@ -83,6 +83,43 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     check('払えないと おにおにが 居座る', miss && q.occupy > 0);
     const b = fresh(); const r0 = b.rate; Sim.borrow(b);
     check('追加で 借りると 利息が 上がる', b.rate > r0 && b.debt === C.bank.debt + C.bank.borrow);
+}
+// 棚の 追加・撤去 (2026-11-17 ユーザー指定)
+{
+    const s = fresh(); s.cash = 1e7;
+    const cap0 = Sim.capOf(s, Sim.product('onigiri'));
+    check('棚を ふやすと ならべられる 数が ふえる', Sim.addShelf(s, 'onigiri') && Sim.capOf(s, Sim.product('onigiri')) === cap0 * 2 && Sim.floorUsed(s) === 9);
+    s.stock.snack = [{ q: 150, age: 0 }];
+    const cash0 = s.cash;
+    check('棚を 撤去すると お金が 少し もどり、商品は 倉庫へ', Sim.removeShelf(s, 'snack') && s.cash > cash0 && s.ware.snack.reduce((a, b) => a + b.q, 0) === 150 && !Sim.available(s, 'snack'));
+    check('棚が ない 商品は 発注できない', s.orders.snack === 0);
+    for (const id of ['bread', 'daily']) Sim.removeShelf(s, id);
+    for (const f of C.facilities) Sim.buyFacility(s, f.id);
+    check('棚を 撤去すると 施設を 多く 置ける', s.facilities.length === C.maxFacilities, s.facilities.length);
+    check('コーヒーは 棚が いらない', Sim.available(s, 'coffee') || !Sim.hasFac(s, 'coffee'));
+}
+// 季節の レアスタッフ (2026-11-17 ユーザー指定)
+{
+    const rares = C.staff.filter(d => d.rare);
+    check('レアスタッフが いる', rares.length >= 6);
+    check('レアは 給料が 高く 能力も 高い', rares.every(d => d.pay > Math.max(...C.staff.filter(x => !x.rare).map(x => x.pay)) && d.st.reduce((a, b) => a + b, 0) > 18));
+    // 7 月に 募集すると (たまに) カキゴーラが 来る・ほかの 季節の レアは 来ない
+    let met = 0, wrong = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+        const s = fresh('onga', seed); s.cash = 1e7; s.week = 13; Sim.prepareWeek(s);
+        Sim.recruit(s); Sim.runWeek(s);
+        const month = Sim.weekInfo(s.week).start.month;
+        if (s.applicants.includes('kakigoora')) met++;
+        if (s.applicants.some(id => { const d = Sim.staffDef(id); return d.rare && !d.rare.months.includes(month); })) wrong++;
+    }
+    check('夏に 募集すると カキゴーラが 来る ことが ある', met > 5, met);
+    check('季節が ちがう レアは 来ない', wrong === 0, wrong);
+    const s = freshO('onga', 2); s.cash = 1e7; s.applicants = ['kakigoora'];
+    const base = Sim.productFactor(s, Sim.product('ice'), 28, 'sun', null);
+    Sim.hire(s, 'kakigoora');
+    check('レアが 店に いると 得意な 商品が 売れる', Sim.productFactor(s, Sim.product('ice'), 28, 'sun', null) > base * 1.3);
+    check('やとった レアは 記録に のこる', s.everHired.includes('kakigoora'));
+    check('スタッフを 解雇できる (店長は できない)', Sim.fire(s, 'kakigoora') && !s.staff.some(m => m.id === 'kakigoora') && !Sim.fire(s, 'koori'));
 }
 // 難易度
 {

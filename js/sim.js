@@ -57,6 +57,9 @@
         };
         for (const p of C.partners) s.partners[p.id] = { on: false, trust: 0, taken: 0 };
         for (const p of C.products) { s.prices[p.id] = p.price; s.stock[p.id] = []; s.ware[p.id] = []; s.back[p.id] = []; }
+        s.shelves = { ...C.startShelves };
+        s.everHired = C.startStaff.slice();
+        s.metRare = [];
         prepareWeek(s);
         // 発注しないと 何も とどかない (2026-11-17 ユーザー指定)。はじめは 発注 0・在庫 0
         for (const p of C.products) s.orders[p.id] = 0;
@@ -65,7 +68,11 @@
     }
 
     const hasFac = (s, id) => s.facilities.includes(id);
-    const available = (s, id) => { const p = product(id); return !p.needs || hasFac(s, p.needs); };
+    // 売れる 商品 = 施設が ある (コーヒー・調理) か、棚が 1 台 以上 ある
+    const shelfUnits = (s, id) => (s.shelves ? s.shelves[id] || 0 : C.startShelves[id] || 0);
+    const needsShelf = p => !p.self && !p.cook;
+    const available = (s, id) => { const p = product(id); return (!p.needs || hasFac(s, p.needs)) && (!needsShelf(p) || shelfUnits(s, id) > 0); };
+    const floorUsed = s => C.products.reduce((a, p) => a + shelfUnits(s, p.id), 0) + s.facilities.length;
     // 倉庫 (2026-11-17 ユーザー指定: 倉庫に 入れて おける)
     const wareCap = s => C.warehouse.cap + C.warehouse.add * s.wareLv;
     function wareUse(s) { return C.products.reduce((a, p) => a + [...s.back[p.id], ...s.ware[p.id]].reduce((x, b) => x + b.q, 0), 0); }
@@ -75,7 +82,7 @@
         s.wareLv++;
         return true;
     }
-    const capOf = (s, p) => Math.round(p.cap * s.facilities.reduce((m, f) => m * (facility(f).capMul && facility(f).capMul[p.id] || 1), 1));
+    const capOf = (s, p) => Math.round(p.cap * (needsShelf(p) ? shelfUnits(s, p.id) : 1) * s.facilities.reduce((m, f) => m * (facility(f).capMul && facility(f).capMul[p.id] || 1), 1));
 
     // ----- スタッフ -----
     const inShop = s => s.staff.filter(m => m.job === 'shop');
@@ -131,6 +138,8 @@
         if (event && event.boost && event.boost[p.id]) f *= event.boost[p.id];
         for (const id of s.facilities) { const fc = facility(id); if (fc.boost && fc.boost[p.id]) f *= fc.boost[p.id]; }
         f *= regionOf(s).pref[p.id] || 1;
+        // レアスタッフの 得意 (店に いる とき)
+        for (const m of s.staff) { const r = staffDef(m.id).rare; if (r && r.perk[p.id] && m.job === 'shop' && m.slots.some(Boolean)) f *= r.perk[p.id]; }
         f *= s.facilities.reduce((a, id) => a * (facility(id).spend || 1), 1);
         return f;
     }
@@ -210,7 +219,7 @@
     // ----- 操作 (画面から よぶ。できないと false) -----
     function facCost(s, id) { return Math.round(facility(id).cost * (id === 'parking' ? regionOf(s).parkingMul : 1)); }
     function buyFacility(s, id) {
-        if (hasFac(s, id) || s.facilities.length >= C.slots || s.cash < facCost(s, id)) return false;
+        if (hasFac(s, id) || s.facilities.length >= C.maxFacilities || floorUsed(s) >= C.floor || s.cash < facCost(s, id)) return false;
         const c = facCost(s, id);
         s.cash -= c;
         s.paid[id] = c;
@@ -227,6 +236,28 @@
         if (p) { s.orders[p.id] = 0; s.stock[p.id] = []; s.ware[p.id] = []; s.back[p.id] = []; }
         return true;
     }
+    // 棚を ふやす・撤去する (2026-11-17 ユーザー指定)。撤去すると 棚の 商品は 倉庫に もどる
+    function addShelf(s, id) {
+        const p = product(id);
+        if (!p || !needsShelf(p) || floorUsed(s) >= C.floor || s.cash < C.shelf.cost) return false;
+        s.cash -= C.shelf.cost;
+        s.shelves[id] = shelfUnits(s, id) + 1;
+        return true;
+    }
+    function removeShelf(s, id) {
+        const p = product(id);
+        if (!p || shelfUnits(s, id) <= 0) return false;
+        s.shelves[id]--;
+        s.cash += Math.round(C.shelf.cost * C.shelf.refund);
+        const cap = capOf(s, p);
+        let over = s.stock[id].reduce((a, b) => a + b.q, 0) - cap;
+        for (const b of [...s.stock[id]].reverse()) { if (over <= 0) break; const t = Math.min(b.q, over); b.q -= t; over -= t; s.ware[id].push({ q: t, age: b.age }); }
+        s.stock[id] = s.stock[id].filter(b => b.q > 0);
+        if (!s.shelves[id]) s.orders[id] = 0;
+        return true;
+    }
+    // 季節の レアスタッフ: いま (月) やとえるか
+    const rareNow = (d, month) => !!d.rare && d.rare.months.includes(month);
     // アルバイト募集: お金を はらうと つぎの 週に 応募が 来る
     function recruit(s) {
         if (s.recruiting || s.cash < C.recruit.cost || s.staff.length >= C.maxStaff) return false;
@@ -238,6 +269,7 @@
         const d = staffDef(id);
         if (!d || !(s.applicants || []).includes(id) || s.staff.some(m => m.id === id) || s.staff.length >= C.maxStaff) return false;
         s.applicants = s.applicants.filter(x => x !== id);
+        if (!s.everHired.includes(id)) s.everHired.push(id);
         const m = newMember(id);
         const order = [0, 1, 2].sort((a, b) => slotCap(s, a) - slotCap(s, b));
         m.slots = [0, 0, 0];
@@ -562,7 +594,7 @@
                     const fail = rand(s) < Math.max(0, (dg.danger - ex / 1.5) * 0.15);
                     const got = {};
                     for (const [k, [a, b]] of Object.entries(dg.rewards)) {
-                        const n = Math.round(randInt(s, a, b) * (0.6 + 0.15 * ex) * (fail ? 0.5 : 1));
+                        const n = Math.round(randInt(s, a, b) * (0.6 + 0.15 * ex) * (d.rare && d.rare.dungeon || 1) * (fail ? 0.5 : 1));
                         if (n > 0) { s.mats[k] += n; got[k] = n; }
                     }
                     if (rand(s) < dg.maboroshi * ex / 3 && !fail) { s.mats.maboroshi++; got.maboroshi = 1; }
@@ -598,9 +630,16 @@
         s.applicants = [];
         if (s.recruiting) {
             s.recruiting = false;
-            const pool = C.staff.filter(d => !d.boss && !s.staff.some(m => m.id === d.id)).map(d => d.id);
+            const month = weekInfo(s.week + 1 < C.weeks ? s.week + 1 : s.week).start.month;
+            const pool = C.staff.filter(d => !d.boss && !d.rare && !s.staff.some(m => m.id === d.id)).map(d => d.id);
             const n = Math.min(pool.length, randInt(s, C.recruit.min, C.recruit.max));
             for (let i = 0; i < n; i++) s.applicants.push(pool.splice(Math.floor(rand(s) * pool.length), 1)[0]);
+            // 季節の レアスタッフ (その 月 だけ。確率で 応募に まざる)
+            for (const d of C.staff) if (rareNow(d, month) && !s.staff.some(m => m.id === d.id) && rand(s) < C.recruit.rareChance) {
+                s.applicants.push(d.id);
+                if (!s.metRare.includes(d.id)) s.metRare.push(d.id);
+                say(d.art, `★ レアスタッフ ${d.name}が 応募して きた！ (${d.rare.months.join('・')} 月 だけ)`);
+            }
             if (s.applicants.length) say('koori', `アルバイトの 応募が ${s.applicants.length} 人 来た！ (シフトの ページで 面接)`);
             else say('koori', 'アルバイトの 応募は だれも 来なかった…');
         }
@@ -681,7 +720,7 @@
     }
 
     const Sim = {
-        C, diffOf, rand, dateOf, weekInfo, monthEnds, newGame, available, capOf, stats, slotCap, rolePower, setRole, bestRole, wareCap, wareUse, expandWare, slotWage, wageOf, wages, upkeep, upkeepOf, recruit, priceF, ratioOf, productFactor,
+        C, diffOf, rand, dateOf, weekInfo, monthEnds, newGame, available, capOf, stats, slotCap, rolePower, addShelf, removeShelf, shelfUnits, floorUsed, rareNow, setRole, bestRole, wareCap, wareUse, expandWare, slotWage, wageOf, wages, upkeep, upkeepOf, recruit, priceF, ratioOf, productFactor,
         estTraffic, estSlots, suggest, dailyNeed, stockOf, prepareWeek, facCost, buyFacility, removeFacility, hire, fire, toggleSlot, sendDungeon, recall,
         matsLeft, craftable, addCraft, useItem, setPartner, partnerFee, bookEvent, repay, borrow, relocate, knownPref, runWeek, ranking,
         product, facility, staffDef, recipe, partner, regionOf, trioOn, inShop, hasFac, SEGS
