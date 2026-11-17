@@ -18,6 +18,7 @@
 - 棚の 種類と 商品 (2026-11-17 ユーザー指定): 商品は 28 品 (`type` = 置ける 棚: チルド・飲料・冷凍・常温・雑貨・ラック。`cat` = 発注の まとまり)。あとから ふえた 商品の 客層ごとの 買う 数は `rates`。棚は 種類で 値段と 電気代 (`shelfTypes`) が ちがう。施設 (中華まん・コピー機・宅配ロッカー・トイレ・ベーカリー・EV・キッズ・チケット) と 連携 (漁協・運輸・忍者便・清掃・人材派遣・ガチャポン) も ふやした。古い セーブは `migrate` で そろえる。
 - 難易度 (2026-11-17 ユーザー指定: えらべる ように): `difficulties` (やさしい・ふつう・むずかしい。ライバルの 強さ・はじめの 手持ち・利息・客)。タイトルで えらぶ。`s.difficulty`。
 - バランスは `node tools/test.js` (しくみの テストと 自動プレイ を 難易度ごとに)。目標 (ふつう): 何もしない = 借金が 返せない・目安だけ = クリア 1 割 以下で 借金は 9 割 以上 返せる・工夫 = クリア 3〜6 割 で 平均 第 24 週 より あと、どの 地域でも クリア できる・むちゃ = 返せない。やさしい = 目安だけでも 2 割 以上・工夫で 6 割 以上。むずかしい = 目安だけでは 0・工夫でも ふつうより 少ない。地域ごとの 数字は scratchpad の probe か `node tools/strategies.js`。
+- 仕入れ値 (2026-11-17 ユーザー指定・決定): 発注の 表に 仕入れ・1こ の もうけ (`marginOf`)。仕入れ値は 週ごとに 動く (`costMove`・`prepareWeek` の `moveCosts`。`s.costNow` = 今週・`s.costPrev` = 先週・`s.costWhy` = わけ)。連携の 割引は `partners[].costDown` × 信頼度 (`costOf`)。仕入れ値は 発注した 週の 値。売り値は 自動で 変わらない。自動プレイ (`followCost`) は 仕入れの 差額ぶん 売り値を 動かす。
 - 公開: https://taku3482yasu-web.github.io/koori-konbini/ (main に push すると 公開)。ゲーム大全に No.08 で ならべた。テストが 通ったら 聞かずに commit して push する (2026-11-17 ユーザー指定)。
 - コミットの 前に `.githooks/pre-commit` が テストする (`git config core.hooksPath .githooks`)。
 - 画面の 確認: `index.html?play=onga&weeks=6` (地域を えらんで 6 週 すすめた ところ)・`&tab=staff|shop|partner|bank|area|rank`・`&report=1` (1 週 営業して まとめ)・`&end=clear|normal|bad`・`?story=1` (オープニング)・`?region=1` (出店地)。

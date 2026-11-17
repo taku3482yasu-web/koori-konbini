@@ -42,11 +42,17 @@ function coverSlots(s, slack) {
     }
 }
 
+// 仕入れ値が 動いたら その ぶん 売り値も 動かす (2026-11-17: 自動プレイも 仕入れ値を 見て 売り値を 合わせる)
+function followCost(s, base) {
+    for (const p of C.products) Sim.setPrice(s, p.id, base(p) + (Sim.costOf(s, p.id) - p.cost));
+}
+
 // 何も しない
 function idle() {}
 
 // おまかせ: 毎週 目安で 発注・安い 施設から・足りない コマに 人を やとう
 function normal(s) {
+    followCost(s, p => p.price);
     autoOrder(s);
     // 目安プレイは よく ある 施設を 安い 順に (新しい 施設は つかわない)
     for (const f of C.facilities.filter(x => ['oden', 'wifi', 'fryer', 'coffee', 'atm', 'smoke', 'eatin', 'parking'].includes(x.id)).sort((a, b) => a.cost - b.cost)) if (s.cash > Sim.facCost(s, f.id) + 300000) Sim.buyFacility(s, f.id);
@@ -70,7 +76,7 @@ function good(s) {
     const lastP = recent.length ? recent.reduce((a, h) => a + h.profit, 0) / recent.length : 0;
     for (const id of PLAN[r.id]) if (s.cash > Sim.facCost(s, id) + reserve && (lastP > 0 || !s.facilities.length)) Sim.buyFacility(s, id);
     // 値段: 高いと 買わない ラインの すこし 下
-    for (const p of C.products) s.prices[p.id] = Math.round(p.price * Math.min(1.1, r.line) / 10) * 10;
+    followCost(s, p => p.price * Math.min(1.1, r.line));
     // 予報で 見つもって 発注
     const info = Sim.weekInfo(s.week);
     for (const p of C.products) {

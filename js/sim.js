@@ -219,7 +219,58 @@
             const miss = rand(s) < C.forecastMiss;
             s.forecast.push({ w: miss ? rollWeather(s, mi) : w, temp: temp + Math.round((rand(s) - 0.5) * 4) });
         }
+        moveCosts(s);
     }
+
+    // ----- 仕入れ値 (2026-11-17 ユーザー決定: 週ごとに 変わる。発注した 週の 値で きまる) -----
+    // costNow = 今週の 仕入れ値 (連携の 割引の 前)、costPrev = 先週の、costWhy = 動いた わけ
+    function costTarget(s, p) {
+        const M = C.costMove, info = weekInfo(s.week), month = info.start.month;
+        let mul = 1;
+        const why = [];
+        for (const x of M.season) if (x.ids.includes(p.id) && x.months.includes(month)) { mul *= x.mul; why.push(x.why); }
+        const ws = (s.weather || []).map(x => x.w);
+        if (ws.includes('typhoon') && M.typhoon.ids.includes(p.id)) { mul *= M.typhoon.mul; why.push(M.typhoon.why); }
+        if (ws.includes('snow') && M.snow.ids.includes(p.id)) { mul *= M.snow.mul; why.push(M.snow.why); }
+        if (info.event && info.event.boost && (info.event.boost[p.id] || 1) >= M.event.boost) { mul *= M.event.mul; why.push(M.event.why); }
+        return { mul, why };
+    }
+    function moveCosts(s) {
+        const M = C.costMove;
+        s.costDrift = s.costDrift || {};
+        s.costPrev = s.costNow ? { ...s.costNow } : null;
+        s.costNow = {}; s.costWhy = {};
+        for (const p of C.products) {
+            const d = s.week === 0 ? 0 : (s.costDrift[p.id] || 0) * M.keep + (rand(s) - 0.5) * 2 * M.drift;
+            s.costDrift[p.id] = clamp(d, -M.max, M.max);
+            const t = costTarget(s, p);
+            s.costNow[p.id] = Math.round(p.cost * clamp(t.mul * (1 + s.costDrift[p.id]), 1 - M.max, 1 + M.max));
+            if (t.why.length) s.costWhy[p.id] = t.why;
+        }
+    }
+    // 連携の 割引 (信頼度で もっと 下がる)
+    function costDownOf(s, id) {
+        let f = 1;
+        for (const pt of C.partners) if (pt.costDown && pt.costDown[id] && partnerPower(s, pt.id)) f *= 1 - pt.costDown[id] * partnerPower(s, pt.id);
+        return f;
+    }
+    const costOf = (s, id) => Math.round((s.costNow && s.costNow[id] || product(id).cost) * costDownOf(s, id));
+    // 先週から 変わった 額 (連携の 割引は 入れない)
+    const costChange = (s, id) => (s.costPrev && s.costNow ? (s.costNow[id] || 0) - (s.costPrev[id] || 0) : 0);
+    // 1 こ の もうけ (円・率)
+    function marginOf(s, id) {
+        const c = costOf(s, id), pr = s.prices[id];
+        return { yen: pr - c, rate: pr ? (pr - c) / pr : 0, cost: c };
+    }
+    // 売り値を かえる (はばの 中に おさめる)
+    function priceBounds(id) { const p = product(id); return [Math.round(p.price * C.priceRange[0] / 10) * 10, Math.round(p.price * C.priceRange[1] / 10) * 10]; }
+    function setPrice(s, id, v) {
+        const [a, b] = priceBounds(id);
+        s.prices[id] = clamp(Math.round(v / C.priceStep) * C.priceStep, a, b);
+        return s.prices[id];
+    }
+    // もうけの 率を pct (0〜1) に する 売り値
+    const priceForMargin = (s, id, pct) => costOf(s, id) / Math.max(0.05, 1 - pct);
 
     // ----- 操作 (画面から よぶ。できないと false) -----
     function facCost(s, id) { return Math.round(facility(id).cost * (id === 'parking' ? regionOf(s).parkingMul : 1)); }
@@ -293,6 +344,8 @@
         if (s.clearedWeek === undefined) s.clearedWeek = null;
         if (!s.everHired) s.everHired = C.startStaff.slice();
         if (!s.metRare) s.metRare = [];
+        if (!s.costNow) { s.costNow = {}; s.costDrift = {}; s.costWhy = {}; s.costPrev = null; }
+        for (const p of C.products) if (s.costNow[p.id] === undefined) s.costNow[p.id] = p.cost;
         for (const p of C.partners) if (!s.partners[p.id]) s.partners[p.id] = { on: false, trust: 0, taken: 0 };
         s.facilities = s.facilities.filter(id => facility(id));
         return s;
@@ -453,7 +506,10 @@
         const shelfPlus = s.effects.hieishi ? 1 : 0;
         const hunters = Math.min(0.3, s.regulars * C.hunterRate);
         const rep = {};
-        for (const p of prods) rep[p.id] = { ordered: 0, refused: 0, need: 0, sold: 0, lost: 0, shelfOut: 0, waste: 0, kids: 0, marked: 0, demand: 0, open: 0, sales: 0 };
+        // 仕入れ値は 発注した 週の 値 (とどく 日に 変わらない)
+        const costs = {};
+        for (const p of prods) costs[p.id] = costOf(s, p.id);
+        for (const p of prods) rep[p.id] = { ordered: 0, refused: 0, need: 0, sold: 0, lost: 0, shelfOut: 0, waste: 0, kids: 0, marked: 0, demand: 0, open: 0, sales: 0, cost: 0, unit: costs[p.id], price: s.prices[p.id] };
         const lim = {};
         for (const [rid, n] of Object.entries(limitedMade)) { lim[rid] = { made: n, sold: 0, lost: 0, waste: 0, sales: 0 }; (s.limited[rid] = s.limited[rid] || []); }
         const work = { check: [0, 0, 0], stock: [0, 0, 0], cook: [0, 0, 0], checkCap: checkP, stockCap: stockP, cookCap: cookP, arrived: 0, refused: 0 };
@@ -485,7 +541,7 @@
                 const q = Math.max(0, Math.round(s.orders[p.id] || 0));
                 if (!q) continue;
                 const ok = Math.min(q, Math.max(0, wareCap(s) - wareUse(s)));
-                if (ok) { s.back[p.id].push({ q: ok, age: 0 }); x.ordered += ok; buy += ok * p.cost; work.arrived += ok; }
+                if (ok) { s.back[p.id].push({ q: ok, age: 0 }); x.ordered += ok; buy += ok * costs[p.id]; x.cost += ok * costs[p.id]; work.arrived += ok; }
                 if (q > ok) { x.refused += q - ok; work.refused += q - ok; }
             }
             let daySales = 0, dayServed = 0, dayAll = 0;
@@ -557,7 +613,7 @@
                 for (const k of ['back', 'ware', 'stock']) for (const b of s[k][p.id]) {
                     b.age++;
                     if (b.age >= life && b.q) {
-                        if (s.kids) { x.kids += b.q; kids += b.q; } else { x.waste += b.q; wasteYen += b.q * p.cost; }
+                        if (s.kids) { x.kids += b.q; kids += b.q; } else { x.waste += b.q; wasteYen += b.q * costs[p.id]; }
                         b.q = 0;
                     }
                 }
@@ -778,7 +834,7 @@
     }
 
     const Sim = {
-        C, diffOf, yearOf, levelOf, floorCap, facCap, rentOf, canExpand, expandStore, migrate, shelfUpkeep, rand, dateOf, weekInfo, monthEnds, newGame, available, capOf, stats, slotCap, rolePower, addShelf, removeShelf, shelfUnits, floorUsed, rareNow, setRole, bestRole, wareCap, wareUse, expandWare, slotWage, wageOf, wages, upkeep, upkeepOf, recruit, priceF, ratioOf, productFactor,
+        C, costOf, costChange, costDownOf, marginOf, setPrice, priceBounds, priceForMargin, moveCosts, diffOf, yearOf, levelOf, floorCap, facCap, rentOf, canExpand, expandStore, migrate, shelfUpkeep, rand, dateOf, weekInfo, monthEnds, newGame, available, capOf, stats, slotCap, rolePower, addShelf, removeShelf, shelfUnits, floorUsed, rareNow, setRole, bestRole, wareCap, wareUse, expandWare, slotWage, wageOf, wages, upkeep, upkeepOf, recruit, priceF, ratioOf, productFactor,
         estTraffic, estSlots, suggest, dailyNeed, stockOf, prepareWeek, facCost, buyFacility, removeFacility, hire, fire, toggleSlot, sendDungeon, recall,
         matsLeft, craftable, addCraft, useItem, setPartner, partnerFee, bookEvent, repay, borrow, relocate, knownPref, runWeek, ranking,
         product, facility, staffDef, recipe, partner, regionOf, trioOn, inShop, hasFac, SEGS

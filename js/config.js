@@ -120,6 +120,25 @@
             goods: { name: '雑貨棚', icon: '🛍', cost: 100000, upkeep: 0, text: '日用品・文房具・衣料品・化粧品・電池・おもちゃ・ギフトカード' },
             rack: { name: '雑誌・新聞ラック', icon: '📰', cost: 30000, upkeep: 0, text: '雑誌・まんが・新聞' }
         },
+        // ----- 仕入れ値の 変動 (2026-11-17 ユーザー決定: 仕入れ値は 週ごとに 変わる。売り値は 自動では 変わらない) ★ 数値は Claude -----
+        // drift = 週ごとの ゆれ (±)、keep = 前の 週の ゆれが のこる 割合、max = 元の 仕入れ値から この 割合より 外へは 出ない
+        // season = 月で 動く (その 月が 過ぎれば もどる)、typhoon / snow = その 週に 台風・雪が あると 上がる、event = 行事で よく 売れる 商品は 上がる
+        costMove: {
+            drift: 0.05, keep: 0.75, max: 0.25,
+            season: [
+                { ids: ['ice'], months: [7, 8], mul: 1.12, why: '夏で アイスの 仕入れが 高い' },
+                { ids: ['ice'], months: [6, 9], mul: 1.05, why: '暑く なって アイスの 仕入れが 高め' },
+                { ids: ['drink'], months: [7, 8], mul: 1.07, why: '夏で ドリンクの 仕入れが 高い' },
+                { ids: ['salad', 'sozai'], months: [1, 2], mul: 1.12, why: '冬で 野菜が 高い' },
+                { ids: ['oden', 'nikuman'], months: [12, 1, 2], mul: 1.06, why: '冬で 材料が 高い' },
+                { ids: ['sweets'], months: [12], mul: 1.08, why: 'クリスマスで いちごが 高い' },
+                { ids: ['onigiri', 'bento'], months: [10, 11], mul: 0.94, why: '新米の 季節で 安い' }
+            ],
+            typhoon: { ids: ['onigiri', 'bento', 'sandwich', 'salad', 'sozai', 'noodle'], mul: 1.1, why: '台風で 配送が 大変' },
+            snow: { ids: ['onigiri', 'bento', 'sandwich', 'bread'], mul: 1.06, why: '雪で 配送が 大変' },
+            event: { boost: 1.3, mul: 1.05, why: '行事で 注文が 多い' }
+        },
+        lowMargin: 0.2,            // ★ もうけの 率が これより 低いと 黄色
         priceStep: 10,
         priceRange: [0.6, 1.6],    // 値段を つけられる はば (ふつうの 何倍)
         cheapLine: 0.88,           // ★ これより 安いと「安っ！」・平均が これより 安いと「安いだけの 店」
@@ -242,12 +261,13 @@
 
         // ----- 業務連携 (企画書: お金を 払って 連携・信頼度で 安く 強く・ライバルに 先に とられる) -----
         partners: [
-            { id: 'farm', name: 'おかおか農場', boss: '★ 未定', art: null, fee: 30000, local: 2, text: '特産品 +2 / 週' },
-            { id: 'field', name: 'はたけ', boss: '★ 未定', art: null, fee: 15000, local: 1, text: '特産品 +1 / 週' },
+            // costDown = 関係する 商品の 仕入れが 下がる 割合 (信頼度で もっと 下がる。2026-11-17 ユーザー決定) ★
+            { id: 'farm', name: 'おかおか農場', boss: '★ 未定', art: null, fee: 30000, local: 2, costDown: { onigiri: 0.06, bento: 0.05, salad: 0.1, sozai: 0.06 }, text: '特産品 +2 / 週・お米と 野菜の 仕入れが 安く なる' },
+            { id: 'field', name: 'はたけ', boss: '★ 未定', art: null, fee: 15000, local: 1, costDown: { salad: 0.08, sozai: 0.05, sandwich: 0.04 }, text: '特産品 +1 / 週・野菜の 仕入れが 安く なる' },
             { id: 'ad', name: 'ひびき広告', boss: 'ひびきまくり (声が でかい)', art: 'hibikimakuri', fee: 50000, traffic: 1.1, text: '来店 +10%' },
             { id: 'event', name: 'DJ かっぱ イベント', boss: 'おかがっぱ (DJ)', art: 'okagappa', fee: 120000, perUse: true, day: 2.2, text: 'えらんだ 1 日だけ 大混雑 (客 2.2 倍)' },
             // 2026-11-17 ユーザー指定で 追加 (社長は シリーズの キャラ。会社と 効果は ★ Claude)
-            { id: 'fishery', name: '浦の島 漁協', boss: '浦の島重蔵', art: 'urashima', fee: 30000, mats: { umi: 1 }, text: '海の さち +1 / 週 (海鮮弁当の 材料)' },
+            { id: 'fishery', name: '浦の島 漁協', boss: '浦の島重蔵', art: 'urashima', fee: 30000, mats: { umi: 1 }, costDown: { bento: 0.04, onigiri: 0.03 }, text: '海の さち +1 / 週 (海鮮弁当の 材料)・お弁当の 仕入れが 少し 安く なる' },
             { id: 'logistics', name: 'ノゾエマ 筋肉運輸', boss: 'ノゾエマ', art: 'nozoema', fee: 50000, check: 1.3, text: '検品が 30% はやく なる (荷物を きれいに 積んで くる)' },
             { id: 'delivery', name: 'ズミタニ 忍者便', boss: 'ズミタニ', art: 'zumitani', fee: 50000, stock: 1.25, text: '品出しが 25% はやく なる (夜の うちに 棚の 近くまで 運ぶ)' },
             { id: 'cleaning', name: 'ハリー 清掃', boss: 'ハリー', art: 'harry', fee: 30000, rep: 1.5, text: '評判 +1.5 / 週 (店が ピカピカ)' },

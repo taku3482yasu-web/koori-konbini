@@ -169,6 +169,35 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     Sim.migrate(old);
     check('古い セーブも 読める', old.storeLv === 0 && old.mode === 'year' && Array.isArray(old.stock.cosme) && old.shelves.onigiri === 1);
 }
+// 仕入れ値の 変動 (2026-11-17 ユーザー決定)
+{
+    const s = fresh('onga', 3);
+    check('はじめの 週は 元の 仕入れ値 (季節・行事の ぶん だけ)', C.products.every(p => s.costWhy[p.id] || Sim.costOf(s, p.id) === p.cost));
+    let moved = 0, inside = true, summerIce = 0, springIce = 0;
+    for (let w = 0; w < 52; w++) {
+        orderAll(s); Sim.runWeek(s);
+        if (s.over) break;
+        for (const p of C.products) { const c = s.costNow[p.id]; if (c !== p.cost) moved++; if (c > p.cost * 1.25 + 1 || c < p.cost * 0.75 - 1) inside = false; }
+        const m = Sim.weekInfo(s.week).start.month;
+        if (m === 8) summerIce += s.costNow.ice / Sim.product('ice').cost; if (m === 5) springIce += s.costNow.ice / Sim.product('ice').cost;
+    }
+    check('仕入れ値は 週ごとに 動く', moved > 100, moved);
+    check('仕入れ値は 元から ±25% の 中', inside);
+    check('夏は アイスの 仕入れが 上がる', summerIce / 4 > springIce / 4, `${summerIce} ${springIce}`);
+    const a = fresh('onga', 5), b = fresh('onga', 5);
+    Sim.setPartner(b, 'farm', true);
+    check('農場と 組むと お米と 野菜の 仕入れが 下がる', Sim.costOf(b, 'salad') < Sim.costOf(a, 'salad') && Sim.costOf(b, 'drink') === Sim.costOf(a, 'drink'));
+    b.partners.farm.trust = 10;
+    check('信頼度で もっと 下がる', Sim.costOf(b, 'salad') <= Math.round(Sim.costOf(a, 'salad') * (1 - 0.1 * 1.1)) + 1);
+    const o = freshO('onga', 6); const c0 = Sim.costOf(o, 'onigiri'); const r = Sim.runWeek(o);
+    check('仕入れ値は 発注した 週の 値で きまる', r.products.onigiri.cost === r.products.onigiri.ordered * c0);
+    const p0 = o.prices.onigiri; o.costNow.onigiri = 200;
+    check('仕入れが 上がっても 売り値は 自動で 変わらない', o.prices.onigiri === p0 && Sim.marginOf(o, 'onigiri').yen < 0);
+    Sim.setPrice(o, 'bento', Sim.priceForMargin(o, 'bento', 0.4));
+    check('もうけ ○% の 売り値', Math.abs(Sim.marginOf(o, 'bento').rate - 0.4) < 0.03, Sim.marginOf(o, 'bento').rate);
+    const old = JSON.parse(JSON.stringify(fresh())); delete old.costNow;
+    check('古い セーブにも 仕入れ値が 入る', Sim.migrate(old).costNow.onigiri === Sim.product('onigiri').cost);
+}
 // 難易度
 {
     const e = Sim.newGame('t', 1, 'onga', 'easy'), h = Sim.newGame('t', 1, 'onga', 'hard'), x = Sim.newGame('t', 1, 'onga');

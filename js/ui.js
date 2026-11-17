@@ -140,39 +140,53 @@
         const next = C.events.find(e => e.week === s.week + 1);
         let lastCat = null;
         const rows = C.products.map(p => {
-            const head = p.cat !== lastCat ? `<tr class="cat"><th colspan="7">${C.cats[p.cat]}</th></tr>` : '';
+            const head = p.cat !== lastCat ? `<tr class="cat"><th colspan="9">${C.cats[p.cat]}</th></tr>` : '';
             lastCat = p.cat;
-            if (!Sim.available(s, p.id)) return head + (showLocked ? `<tr class="locked"><td class="icon">${p.icon}</td><td colspan="6">${p.name} <small>(${p.needs && !Sim.hasFac(s, p.needs) ? `施設「${Sim.facility(p.needs).name}」で 売れる` : `「棚・施設」で ${C.shelfTypes[p.type].name}を 置くと 売れる`})</small></td></tr>` : '');
+            if (!Sim.available(s, p.id)) return head + (showLocked ? `<tr class="locked"><td class="icon">${p.icon}</td><td colspan="8">${p.name} <small>(${p.needs && !Sim.hasFac(s, p.needs) ? `施設「${Sim.facility(p.needs).name}」で 売れる` : `「棚・施設」で ${C.shelfTypes[p.type].name}を 置くと 売れる`})</small></td></tr>` : '');
             const l = lastOf(p.id);
             const ratio = s.prices[p.id] / p.price;
             const voice = ratio > r.line * 1.08 ? '<span class="voice high">高っ…</span>' : ratio < C.cheapLine ? '<span class="voice cheap">安っ！</span>' : '';
             const qOf = k => (s[k][p.id] || []).reduce((a, b) => a + b.q, 0);
             const stockText = p.self ? `豆 ${qOf('ware')}` : `棚 ${qOf('stock')}<small>/${Sim.capOf(s, p)}</small><br>倉庫 ${qOf('ware') + qOf('back')}`;
             const lastText = l ? `${Math.round(l.sold / Math.max(1, l.open))}${l.lost ? ` <em class="lost">逃${Math.round(l.lost / Math.max(1, l.open))}</em>` : ''}${l.refused ? ` <em class="lost">断${Math.round(l.refused / 7)}</em>` : ''}${l.waste ? ` <em class="waste">廃${Math.round(l.waste / 7)}</em>` : ''}${l.kids ? ` <em class="kids">食${Math.round(l.kids / 7)}</em>` : ''}` : '-';
-            return `${head}<tr>
+            const mg = Sim.marginOf(s, p.id), ch = Sim.costChange(s, p.id), down = Sim.costDownOf(s, p.id) < 1;
+            const why = (s.costWhy && s.costWhy[p.id] || []).join('・');
+            return `${head}<tr class="${mg.yen <= 0 ? 'loss' : ''}">
                 <td class="icon">${p.icon}</td>
-                <td class="pname">${p.name}${prefMark(p.id)}<small>${p.shelf ? `期限 ${p.shelf} 日` : '日持ちする'}・仕入れ ${p.cost}円${p.cook ? '・調理' : ''}</small></td>
-                <td class="qty price"><button data-price="${p.id}" data-d="-1">−</button><b>${s.prices[p.id]}円</b><button data-price="${p.id}" data-d="1">＋</button>${voice}</td>
+                <td class="pname">${p.name}${prefMark(p.id)}<small>${p.shelf ? `期限 ${p.shelf} 日` : '日持ちする'}${p.cook ? '・調理' : ''}</small></td>
+                <td class="cost" title="${why}${down ? `${why ? '・' : ''}連携で 安く なって いる` : ''}"><b>${mg.cost}円</b>${ch ? `<em class="${ch > 0 ? 'up' : 'down'}">${ch > 0 ? '↑' : '↓'}${Math.abs(ch)}円</em>` : ''}${down ? '<em class="partner">連携</em>' : ''}</td>
+                <td class="qty price"><button data-price="${p.id}" data-d="-1">−</button><button class="pbtn" data-pmenu="${p.id}" title="値段の メニュー">${s.prices[p.id]}円</button><button data-price="${p.id}" data-d="1">＋</button>${voice}</td>
+                <td class="margin ${mg.yen <= 0 ? 'neg' : mg.rate < C.lowMargin ? 'low' : ''}">${mg.yen >= 0 ? '+' : '−'}${Math.abs(mg.yen)}円<small> (${Math.round(mg.rate * 100)}%)</small></td>
                 <td class="last">${lastText}</td>
                 <td class="stockq">${stockText}</td>
-                <td class="qty"><button data-step="${p.id}" data-d="-10">−</button><input type="number" min="0" step="10" data-order="${p.id}" value="${s.orders[p.id] || 0}"><button data-step="${p.id}" data-d="10">＋</button></td>
-                <td><button class="mini" data-auto="${p.id}" title="先週 1 日に 売れそうだった 数 (日持ちする 商品は 在庫も 見る)">目安 ${Sim.suggest(s, p.id)}</button></td>
+                <td class="qty order"><button data-step="${p.id}" data-d="-10">−</button><input type="number" min="0" step="10" data-order="${p.id}" value="${s.orders[p.id] || 0}"><button data-step="${p.id}" data-d="10">＋</button></td>
+                <td class="auto"><button class="mini" data-auto="${p.id}" title="先週 1 日に 売れそうだった 数 (日持ちする 商品は 在庫も 見る)">目安 ${Sim.suggest(s, p.id)}</button></td>
             </tr>`;
         }).join('');
+        // 今週 仕入れが 上がった・下がった 商品
+        const sold = C.products.filter(p => Sim.available(s, p.id));
+        const ups = sold.filter(p => Sim.costChange(s, p.id) > 0), downs = sold.filter(p => Sim.costChange(s, p.id) < 0);
+        const losses = sold.filter(p => Sim.marginOf(s, p.id).yen <= 0);
+        const costBox = ups.length || downs.length || losses.length ? `<div class="costbox">
+            ${ups.length ? `<div><b class="bad">↑ 今週 仕入れが 上がった</b> ${ups.map(p => `<span title="${(s.costWhy[p.id] || []).join('・')}">${p.icon}${p.name} +${Sim.costChange(s, p.id)}円</span>`).join('')}</div>` : ''}
+            ${downs.length ? `<div><b class="good">↓ 下がった</b> ${downs.map(p => `<span>${p.icon}${p.name} −${-Sim.costChange(s, p.id)}円</span>`).join('')}</div>` : ''}
+            ${losses.length ? `<div><b class="bad">⚠ 赤字</b> ${losses.map(p => `<span>${p.icon}${p.name}</span>`).join('')} <small>売り値を 見なおそう</small></div>` : ''}</div>` : '';
         const left = Sim.matsLeft(s);
         const mats = Object.entries(C.materials).map(([k, m]) => `<span class="mat">${m.icon} ${k === 'local' ? r.local.name : m.name} <b>${left[k]}</b>${left[k] !== s.mats[k] ? `<small>/${s.mats[k]}</small>` : ''}</span>`).join('');
         const recipes = C.recipes.map(rc => {
             const use = Object.entries(rc.use).map(([k, v]) => `${C.materials[k].icon}${v}`).join(' + ');
-            return `<div class="recipe"><span class="ri">${rc.icon}</span><div><b>${rc.id === 'localBento' ? `${r.local.name.replace(/^.*の /, '')}弁当` : rc.name}</b><small>${use} → ${rc.make} こ・${rc.price}円${rc.rep ? '・評判 アップ' : ''}</small></div>
+            return `<div class="recipe"><span class="ri">${rc.icon}</span><div><b>${rc.id === 'localBento' ? `${r.local.name.replace(/^.*の /, '')}弁当` : rc.name}</b><small>${use} → ${rc.make} こ・${rc.price}円・仕入れ ${rc.cost}円 (材料の ほか)・1こ の もうけ <span class="good">+${rc.price - rc.cost}円 (${Math.round((rc.price - rc.cost) / rc.price * 100)}%)</span>${rc.rep ? '・評判 アップ' : ''}</small></div>
                 <span class="qty"><button data-craft="${rc.id}" data-d="-1">−</button><b>${s.craft[rc.id] || 0}</b><button data-craft="${rc.id}" data-d="1"${Sim.craftable(s, rc.id) ? '' : ' disabled'}>＋</button></span></div>`;
         }).join('');
         $('tab-order').innerHTML = `${ev}${next ? `<div class="event next">来週は ${next.name}${next.text ? `: ${next.text}` : ''}</div>` : ''}
             <div class="forecast"><span class="lbl">天気予報</span>${fc}</div>
             <div class="ware"><span>📦 倉庫</span><i class="bar"><i style="width:${Math.min(100, Sim.wareUse(s) / Sim.wareCap(s) * 100)}%"></i></i><b>${Sim.wareUse(s).toLocaleString()} / ${Sim.wareCap(s).toLocaleString()}</b></div>
             <p class="note">商品は 発注しないと とどかない。毎朝 とどいた 商品は 検品して 倉庫へ、品出しで 棚へ。客が 買えるのは 棚の 商品だけ。倉庫が いっぱいだと 受け取れない。</p>
-            <div class="order-head"><span>値段と 毎朝 とどく 数</span><span><label class="chip${showLocked ? ' on' : ''}"><input type="checkbox" id="show-locked"${showLocked ? ' checked' : ''}>売って いない 商品も 見る</label> <button id="auto-all" class="mini">ぜんぶ 目安に</button></span></div>
-            <div class="table-wrap"><table class="orders"><thead><tr><th></th><th>商品</th><th>値段</th><th>先週/日</th><th>在庫</th><th>発注/日</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-            <p class="note">逃 = 品切れで 買えなかった・断 = 倉庫が いっぱいで 受け取れなかった・廃 = 廃棄・食 = 子ども食堂へ。↑↓ = この 地域の 好み (売って いくと 分かる)。</p>
+            ${costBox}
+            <div class="order-head"><span>値段と 毎朝 とどく 数</span><span><label class="chip${showLocked ? ' on' : ''}"><input type="checkbox" id="show-locked"${showLocked ? ' checked' : ''}>売って いない 商品も 見る</label> <button id="price-reset" class="mini">ぜんぶ 定価に もどす</button> <button id="auto-all" class="mini">ぜんぶ 目安に</button></span></div>
+            <div class="table-wrap"><table class="orders order-main"><thead><tr><th></th><th>商品</th><th>仕入れ</th><th>売り値</th><th>1こ の もうけ</th><th>見こみ<small> (先週/日)</small></th><th>棚・倉庫</th><th>発注/日</th><th>目安</th></tr></thead><tbody>${rows}</tbody></table></div>
+            <p class="note">仕入れは 週ごとに 変わる (季節・天気・行事)。↑↓ = 先週から 変わった 額。売り値は 自動では 変わらないので、もうけが 赤 (赤字)・黄 (${Math.round(C.lowMargin * 100)}% 未満) の 商品は 見なおそう。売り値の ボタンを 押すと メニューが 出る。<br>
+            逃 = 品切れで 買えなかった・断 = 倉庫が いっぱいで 受け取れなかった・廃 = 廃棄・食 = 子ども食堂へ。商品名の ↑↓ = この 地域の 好み (売って いくと 分かる)。</p>
             <h3>期限 今日までの 商品</h3>
             <div class="row-opts">
                 <span>値下げ</span>${C.markdowns.map(m => `<label class="chip${s.markdown === m ? ' on' : ''}"><input type="radio" name="markdown" value="${m}"${s.markdown === m ? ' checked' : ''}>${m ? `${m * 10}割引き` : 'しない'}</label>`).join('')}
@@ -326,7 +340,7 @@
     }
 
     function updateCost() {
-        const buy = C.products.reduce((a, p) => a + (Sim.available(s, p.id) ? (s.orders[p.id] || 0) * p.cost * 7 : 0), 0);
+        const buy = C.products.reduce((a, p) => a + (Sim.available(s, p.id) ? (s.orders[p.id] || 0) * Sim.costOf(s, p.id) * 7 : 0), 0);
         const fees = C.partners.filter(p => !p.perUse && s.partners[p.id].on).reduce((a, p) => a + Sim.partnerFee(s, p.id), 0) + (s.eventDay >= 0 ? Sim.partnerFee(s, 'event') : 0);
         $('cost-note').innerHTML = `仕入れ 約${man(buy)}・給料 ${man(Sim.wages(s))}・家賃 ${man(Sim.rentOf(s))}・設備代 ${man(Sim.upkeep(s))}${fees ? `・連携 ${man(fees)}` : ''}`;
     }
@@ -347,11 +361,9 @@
         if (d.step) { s.orders[d.step] = Math.max(0, (s.orders[d.step] || 0) + Number(d.d)); const inp = document.querySelector(`input[data-order="${d.step}"]`); if (inp) inp.value = s.orders[d.step]; updateCost(); }
         else if (d.auto) { s.orders[d.auto] = Sim.suggest(s, d.auto); renderOrder(Sim.weekInfo(s.week)); updateCost(); }
         else if (t.id === 'auto-all') { for (const p of C.products) if (Sim.available(s, p.id)) s.orders[p.id] = Sim.suggest(s, p.id); renderOrder(Sim.weekInfo(s.week)); updateCost(); }
-        else if (d.price) {
-            const p = Sim.product(d.price);
-            s.prices[p.id] = Math.max(Math.round(p.price * C.priceRange[0] / 10) * 10, Math.min(Math.round(p.price * C.priceRange[1] / 10) * 10, s.prices[p.id] + Number(d.d) * C.priceStep));
-            renderOrder(Sim.weekInfo(s.week));
-        }
+        else if (d.price) { Sim.setPrice(s, d.price, s.prices[d.price] + Number(d.d) * C.priceStep); renderOrder(Sim.weekInfo(s.week)); }
+        else if (d.pmenu) { openPriceMenu(d.pmenu, t); return; }
+        else if (t.id === 'price-reset') { for (const p of C.products) s.prices[p.id] = p.price; renderOrder(Sim.weekInfo(s.week)); say('furukawa', 'ぜんぶ 定価に もどしたよ。'); }
         else if (d.craft) { Sim.addCraft(s, d.craft, Number(d.d)); renderOrder(Sim.weekInfo(s.week)); }
         else if (d.role) { Sim.setRole(s, d.role, d.r); renderStaff(); }
         else if (d.slot) { Sim.toggleSlot(s, d.slot, Number(d.t)); renderStaff(); updateCost(); }
@@ -386,6 +398,40 @@
         else if ('dj' in t.dataset) { Sim.bookEvent(s, Number(t.value)); if (s.eventDay >= 0) say('okagappa', `${C.dayNames[s.eventDay]}曜日は まかせとけ！ YO！`); updateCost(); }
         save();
     });
+
+    // ----- 値段の メニュー (2026-11-17 ユーザー指定: 定価・ちょい安・ちょい高・もうけ ○%) -----
+    const pm = document.createElement('div');
+    pm.id = 'pmenu'; pm.className = 'pmenu'; pm.hidden = true;
+    document.body.appendChild(pm);
+    let pmId = null;
+    function openPriceMenu(id, btn) {
+        pmId = id;
+        const p = Sim.product(id), mg = Sim.marginOf(s, id), [lo, hi] = Sim.priceBounds(id);
+        const opt = (k, label, v) => `<button data-pset="${k}"><span>${label}</span><b>${Math.min(hi, Math.max(lo, Math.round(v / 10) * 10))}円</b></button>`;
+        pm.innerHTML = `<div class="pm-head">${p.icon} ${p.name}<small>仕入れ ${mg.cost}円・いま ${s.prices[id]}円 (もうけ ${Math.round(mg.rate * 100)}%)</small></div>
+            ${opt('list', 'ふつう (定価)', p.price)}${opt('cheap', 'ちょい安 (−10%)', p.price * 0.9)}${opt('high', 'ちょい高 (+10%)', p.price * 1.1)}
+            <div class="pm-margin"><span>もうけ</span><input type="number" id="pm-pct" min="0" max="80" value="${Math.max(0, Math.round(mg.rate * 100))}"><span>% に</span><button data-pset="margin">する</button></div>
+            <button class="pm-close" data-pset="close">とじる</button>`;
+        pm.hidden = false;
+        const r = btn.getBoundingClientRect(), w = Math.min(260, innerWidth - 16);
+        pm.style.width = `${w}px`;
+        pm.style.left = `${scrollX + Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`;
+        const h = pm.offsetHeight;
+        pm.style.top = `${scrollY + (r.bottom + h + 8 < innerHeight ? r.bottom + 4 : Math.max(8, r.top - h - 4))}px`;
+    }
+    function closePriceMenu() { pm.hidden = true; pmId = null; }
+    pm.addEventListener('click', e => {
+        const b = e.target.closest('[data-pset]');
+        if (!b || !pmId) return;
+        const p = Sim.product(pmId), k = b.dataset.pset;
+        if (k === 'list') Sim.setPrice(s, p.id, p.price);
+        else if (k === 'cheap') Sim.setPrice(s, p.id, p.price * 0.9);
+        else if (k === 'high') Sim.setPrice(s, p.id, p.price * 1.1);
+        else if (k === 'margin') { const v = Number($('pm-pct').value); if (!Number.isFinite(v)) return; Sim.setPrice(s, p.id, Sim.priceForMargin(s, p.id, Math.min(0.8, Math.max(0, v / 100)))); }
+        closePriceMenu();
+        if (k !== 'close') { renderOrder(Sim.weekInfo(s.week)); save(); }
+    });
+    document.addEventListener('click', e => { if (!pm.hidden && !pm.contains(e.target) && !e.target.closest('[data-pmenu]')) closePriceMenu(); });
 
     // ----- 1 週間 営業 -----
     const wait = ms => new Promise(r => setTimeout(r, skip ? 0 : ms));
@@ -445,8 +491,13 @@
     function showReport(r) {
         const prow = C.products.filter(p => r.products[p.id]).map(p => {
             const x = r.products[p.id];
-            return `<tr><td>${p.icon} ${p.name}</td><td>${x.ordered}</td><td>${x.sold}${x.marked ? `<small> (値下げ ${x.marked})</small>` : ''}</td><td class="${x.lost ? 'lost' : ''}">${x.lost}</td><td class="${x.waste ? 'waste' : ''}">${x.waste}${x.kids ? `<small class="kids"> 食${x.kids}</small>` : ''}</td><td>${man(x.sales)}</td></tr>`;
-        }).join('') + Object.entries(r.limited).map(([rid, x]) => { const rc = Sim.recipe(rid); return `<tr class="limited"><td>${rc.icon} ${rc.name}</td><td>${x.made}</td><td>${x.sold}</td><td>${x.lost}</td><td>${x.waste}</td><td>${man(x.sales)}</td></tr>`; }).join('');
+            const pf = x.sales - (x.cost || 0);
+            return `<tr><td>${p.icon} ${p.name}</td><td>${x.ordered}</td><td>${x.sold}${x.marked ? `<small> (値下げ ${x.marked})</small>` : ''}</td><td class="${x.lost ? 'lost' : ''}">${x.lost}</td><td class="${x.waste ? 'waste' : ''}">${x.waste}${x.kids ? `<small class="kids"> 食${x.kids}</small>` : ''}</td><td>${man(x.sales)}</td><td>${man(x.cost || 0)}${x.unit ? `<small> (${x.unit}円)</small>` : ''}</td><td class="${pf < 0 ? 'lost' : 'good'}">${man(pf)}</td></tr>`;
+        }).join('') + Object.entries(r.limited).map(([rid, x]) => { const rc = Sim.recipe(rid), c = x.made * rc.cost; return `<tr class="limited"><td>${rc.icon} ${rc.name}</td><td>${x.made}</td><td>${x.sold}</td><td>${x.lost}</td><td>${x.waste}</td><td>${man(x.sales)}</td><td>${man(c)}</td><td class="${x.sales - c < 0 ? 'lost' : 'good'}">${man(x.sales - c)}</td></tr>`; }).join('');
+        // いちばん もうけた 商品・もうけが 少なかった 商品 (2026-11-17 ユーザー指定)
+        const ranked = C.products.filter(p => r.products[p.id] && (r.products[p.id].ordered || r.products[p.id].sold)).map(p => ({ p, v: r.products[p.id].sales - (r.products[p.id].cost || 0) })).sort((a, b) => b.v - a.v);
+        const top = ranked[0], low = ranked[ranked.length - 1];
+        const bestLine = ranked.length >= 2 ? `<div class="talk in">${img('furukawa', 44)}<p>いちばん もうけたのは <b>${top.p.icon}${top.p.name}</b> (${man(top.v)})。${low.v < 0 ? `<b>${low.p.icon}${low.p.name}</b>は ${man(low.v)} の 赤字… 発注か 売り値を 見なおそう。` : `もうけが 少なかったのは <b>${low.p.icon}${low.p.name}</b> (${man(low.v)})。`}</p></div>` : '';
         const days = r.days.map((d, i) => `<div class="fc"><small>${C.dayNames[i]}</small><span>${C.weather[d.w].icon}</span><small>${d.customers}</small></div>`).join('');
         const repD = r.repAfter - r.repBefore;
         const evs = r.events.map(e => `<div class="ev">${img(e.who, 36)}<p>${e.text}</p></div>`).join('');
@@ -473,7 +524,8 @@
             </div>
             <details open><summary>お金の くわしい ところ</summary><p class="money">売上 ${yen(r.sales)}<br>仕入れ −${yen(r.buy + r.limitedCost)} (うち 廃棄 ${yen(r.wasteYen)})<br>給料 −${yen(r.wages)}${r.wageList.filter(w => w.yen).map(w => `<small><br>　${Sim.staffDef(w.id).name} ${w.job === 'dungeon' ? 'ダンジョン' : `${w.slots} コマ`} ${yen(w.yen)}</small>`).join('')}<br>家賃 −${yen(r.rent)}<br>設備代 −${yen(r.upkeep)}<br>本部へ (売上の ${Math.round(C.royalty * 100)}%) −${yen(r.royalty)}${r.fees ? `<br>連携 −${yen(r.fees)}` : ''}<br>資金 ${yen(s.cash)}</p></details>
             <div class="workline"><span>📋 検品 ${r.work.check.reduce((a, b) => a + b, 0).toLocaleString()} こ${r.work.backlog ? ` <em class="lost">(のこり ${r.work.backlog})</em>` : ''}</span><span>📦 品出し ${r.work.stock.reduce((a, b) => a + b, 0).toLocaleString()} こ</span>${r.work.cook.some(Boolean) ? `<span>🍳 調理 ${r.work.cook.reduce((a, b) => a + b, 0).toLocaleString()} こ</span>` : ''}${r.work.refused ? `<span class="lost">倉庫が いっぱいで 受け取れず ${r.work.refused.toLocaleString()}</span>` : ''}${r.work.shelfOut ? `<span class="lost">棚が 空で 売れず ${r.work.shelfOut.toLocaleString()}</span>` : ''}</div>
-            <div class="table-wrap"><table class="orders small"><thead><tr><th>商品</th><th>入荷</th><th>売れた</th><th>品切れ</th><th>廃棄</th><th>売上</th></tr></thead><tbody>${prow}</tbody></table></div>
+            <div class="table-wrap"><table class="orders small"><thead><tr><th>商品</th><th>入荷</th><th>売れた</th><th>品切れ</th><th>廃棄</th><th>売上</th><th>仕入れ</th><th>もうけ</th></tr></thead><tbody>${prow}</tbody></table></div>
+            ${bestLine}
             ${evs}${month}
             <div class="talk in">${img('furukawa', 44)}<p><b>ふるカワ</b>「${furukawa(r)}」</p></div>
             <button id="next-button" class="big">${s.over ? 'つづき ▶' : 'つぎの 週へ'}</button>`;
@@ -485,7 +537,12 @@
             else {
                 render();
                 const ev = Sim.weekInfo(s.week).event;
-                say('koori', ev ? `今週は ${ev.name}！ ${ev.text || '発注を 考えよう。'}` : s.occupy ? 'おにおにが 店に 居座ってる… お客さんが こわがってる…' : '天気予報を 見て 発注を きめよう！');
+                // 仕入れが 上がって もうけが へった 商品が あれば ふるカワが ひとこと (2026-11-17 ユーザー決定)
+                const ups = C.products.filter(p => Sim.available(s, p.id) && Sim.costChange(s, p.id) > 0);
+                const thin = ups.filter(p => Sim.marginOf(s, p.id).rate < C.lowMargin);
+                if (thin.length) say('furukawa', `${thin.slice(0, 3).map(p => p.name).join('・')}の 仕入れが 上がって、もうけが ${thin.some(p => Sim.marginOf(s, p.id).yen <= 0) ? '赤字に なってる' : 'へってる'}よ。売り値を 見なおそう。`);
+                else if (ups.length >= 3) say('furukawa', `今週は ${ups.slice(0, 3).map(p => p.name).join('・')}${ups.length > 3 ? ' など' : ''}の 仕入れが 上がったよ。もうけを 見て 売り値を きめてね。`);
+                else say('koori', ev ? `今週は ${ev.name}！ ${ev.text || '発注を 考えよう。'}` : s.occupy ? 'おにおにが 店に 居座ってる… お客さんが こわがってる…' : '天気予報を 見て 発注を きめよう！');
             }
         });
     }
