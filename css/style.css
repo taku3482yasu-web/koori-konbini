@@ -57,7 +57,7 @@ h1 small { display: block; font-size: 0.36em; letter-spacing: 0.3em; color: var(
 .stat b { display: block; font-size: 17px; }
 .scene-wrap { position: relative; }
 #scene { display: block; width: 100%; height: auto; image-rendering: pixelated; }
-.ticker { position: absolute; left: 8px; right: 8px; top: 8px; background: rgba(11, 18, 34, 0.85); border-radius: 10px; padding: 8px 12px; font-size: 15px; }
+.ticker { position: absolute; left: 8px; right: 8px; bottom: 8px; pointer-events: none; background: rgba(11, 18, 34, 0.85); border-radius: 10px; padding: 8px 12px; font-size: 15px; }
 .ticker em { color: var(--bad); font-style: normal; }
 .skip { position: absolute; right: 8px; bottom: 8px; padding: 6px 12px; border-radius: 8px; border: none; background: rgba(0, 0, 0, 0.6); }
 .talk { display: flex; gap: 10px; align-items: center; margin: 10px 16px; padding: 8px 12px; border-radius: 12px; background: #eef6ff; color: #13203a; }
@@ -365,4 +365,48 @@ tr.cat th { text-align: left; padding: 10px 4px 4px; color: var(--gold); font-si
     .order-main td.pname { min-width: 0; }
     .order-main .qty button { width: 24px; }
     .order-main .qty input { width: 46px; padding: 0; }
+}
+
+/* 営業の 早送り (2026-11-17 ユーザー指定: 3 章・10 章) */
+.live-panel { display: none; margin: 0 16px 10px; padding: 10px 12px; border-radius: 12px; background: var(--card); border: 2px solid var(--ice); }
+#game.live .live-panel { display: block; }
+#game.live .tabs, #game.live .panel, #game.live .go-bar { display: none !important; }
+#game.live { padding-bottom: 24px; }
+.lv-head { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center; }
+.lv-when { font-size: 14px; }
+.lv-btns { display: flex; gap: 6px; }
+.lv-btns .go { background: var(--gold); color: #3a2400; border: none; font-weight: 800; }
+.lv-why { margin: 8px 0 4px; padding: 6px 10px; border-radius: 8px; background: #5a2232; font-size: 14px; }
+.lv-acts, .ins-acts { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.lv-acts .mini, .ins-acts .mini { text-align: left; white-space: normal; padding: 6px 10px; }
+.lv-acts small, .ins-acts small { display: block; font-size: 11px; color: var(--sub); }
+.lv-staffs { display: grid; gap: 4px; }
+.lv-staff { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.lv-staff b { min-width: 6em; }
+.lv-staff .slotb { padding: 4px 10px; }
+.lv-opts { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 12px; color: var(--sub); }
+.live-panel h4 { margin: 8px 0 4px; font-size: 13px; }
+.live-panel h4 small { color: var(--sub); font-weight: 500; }
+#scene { cursor: pointer; }
+.inspect .modal-box { width: min(440px, 100%); }
+.inspect h3 { margin: 0 0 8px; }
+.inspect h3 small { display: block; font-size: 12px; color: var(--sub); font-weight: 500; }
+.ins-row { display: grid; grid-template-columns: 4.5em 1fr; gap: 6px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.ins-row > span { color: var(--sub); font-size: 12px; }
+.ins-row .bar { display: inline-block; width: 120px; vertical-align: middle; }
+.ins-row em { font-style: normal; font-size: 12px; margin-left: 6px; }
+.ins-row em.up { color: var(--good); }
+.ins-row em.down { color: var(--bad); }
+.exp { margin-right: 10px; white-space: nowrap; }
+.bars { display: inline-flex; gap: 6px; margin-left: 10px; vertical-align: middle; }
+.bars .b { display: inline-flex; flex-direction: column; align-items: center; width: 22px; }
+.bars .b i { display: block; width: 14px; height: 0; background: var(--ice); border-radius: 3px 3px 0 0; align-self: center; }
+.bars .b { height: 40px; justify-content: flex-end; }
+.bars small { font-size: 10px; color: var(--sub); }
+.ins-price { display: inline-block; min-width: 56px; text-align: center; }
+.warn { color: var(--gold); }
+.inspect .big { display: block; margin: 12px auto 0; }
+@media (max-width: 560px) {
+    .ticker { font-size: 12px; padding: 4px 8px; left: 4px; right: 4px; bottom: 4px; }
+    .live-panel { margin: 0 8px 10px; }
 }

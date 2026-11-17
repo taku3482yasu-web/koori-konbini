@@ -139,6 +139,12 @@
             event: { boost: 1.3, mul: 1.05, why: '行事で 注文が 多い' }
         },
         lowMargin: 0.2,            // ★ もうけの 率が これより 低いと 黄色
+        // 営業中に 手を 打つ (2026-11-17 ユーザー決定: 案B) ★ 数値は Claude
+        // rushCost = 緊急発注の 仕入れ値の 倍率、rushFee = 送料 (1 回)、shiftMood = シフトを 入れ替えた 人の やる気、
+        // cookBoost = 調理を 増やした コマの 調理の 力、callout = 呼びこみの コマの 来店の 倍率
+        midweek: { rushCost: 1.3, rushFee: 3000, shiftMood: 3, cookBoost: 1.5, callout: 1.1 },
+        // 営業の 早送り (2026-11-17 ユーザー指定) ★: 1 日 何ミリ秒 か
+        playback: { dayMs: 2000 },
         priceStep: 10,
         priceRange: [0.6, 1.6],    // 値段を つけられる はば (ふつうの 何倍)
         cheapLine: 0.88,           // ★ これより 安いと「安っ！」・平均が これより 安いと「安いだけの 店」

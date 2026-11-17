@@ -49,7 +49,7 @@
     $('mode-row').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (b) { mode = b.dataset.mode; renderDiff(); } });
     $('diff-row').addEventListener('click', e => { const b = e.target.closest('[data-diff]'); if (b) { difficulty = b.dataset.diff; renderDiff(); } });
     $('new-button').addEventListener('click', () => story(OPENING, regionSelect));
-    $('continue-button').addEventListener('click', () => { s = load(); if (s) { start(); say('furukawa', 'つづきから だね。今週も たのむよ！'); } });
+    $('continue-button').addEventListener('click', () => { s = load(); if (s) { start(); say('furukawa', s.wk ? '営業の 途中から だね。▶ で つづけよう！' : 'つづきから だね。今週も たのむよ！'); if (s.wk) resumeWeek(); } });
 
     // ----- お話 (企画書の あらすじ) -----
     const OPENING = [
@@ -433,42 +433,218 @@
     });
     document.addEventListener('click', e => { if (!pm.hidden && !pm.contains(e.target) && !e.target.closest('[data-pmenu]')) closePriceMenu(); });
 
-    // ----- 1 週間 営業 -----
-    const wait = ms => new Promise(r => setTimeout(r, skip ? 0 : ms));
-    $('go-button').addEventListener('click', async () => {
+    // ----- 1 週間 営業 (2026-11-17 ユーザー指定: 7 日ぶんを 早送りで 見せる。止めて 手を 打てる) -----
+    // 計算は Sim.runSlot で 1 コマずつ。コマの 区切りで セーブ (閉じても その コマから 再開)
+    const PREF_KEY = 'koori-konbini-pref';
+    function pref() { try { return { skipAll: false, autoStop: true, ...(JSON.parse(localStorage.getItem(PREF_KEY)) || {}) }; } catch (e) { return { skipAll: false, autoStop: true }; } }
+    function setPref(k, v) { const p = pref(); p[k] = v; try { localStorage.setItem(PREF_KEY, JSON.stringify(p)); } catch (e) { /* なし */ } }
+    let paused = false, pauseWhy = '', resumeAfterInspect = false, liveTimer = null;
+    const slotMs = () => (C.playback.dayMs / 3);
+    let sleepResolve = null;
+    const sleep = ms => new Promise(r => { sleepResolve = r; liveTimer = setTimeout(() => { sleepResolve = null; r(); }, ms); });
+
+    $('go-button').addEventListener('click', () => {
         if (running) return;
         if (!s.staff.some(m => m.job === 'shop' && m.slots.some(Boolean))) { say('koori', 'だれも シフトに 入って ないよ！'); return; }
+        closePriceMenu();
+        Sim.beginWeek(s);
+        save();
+        playWeek();
+    });
+    // 営業の 途中から (セーブを 読んだ とき)
+    function resumeWeek() { paused = true; pauseWhy = '営業の 途中から だよ。▶ で つづける。'; playWeek(); }
+
+    let alerted = new Set(), stopDay = -1;
+    async function playWeek() {
         running = true;
-        skip = skip || params.get('fast') === '1';
-        $('go-button').disabled = true;
-        const report = Sim.runWeek(s);
+        alerted = new Set(); stopDay = -1;
+        skip = skip || params.get('fast') === '1' || pref().skipAll;
+        $('game').classList.add('live');
+        $('ticker').hidden = false;
+        renderLive();
+        while (s.wk && s.wk.d < 7) {
+            if (paused && !skip) { renderLive(); await new Promise(r => { resumeFn = r; }); continue; }
+            const w = s.wk, d = w.d, t = w.t;
+            const dt = Sim.dateOf(s.week * 7 + d), info = Sim.weekInfo(s.week);
+            const wx = s.weather[d];
+            if (t === 0 && !skip) {
+                Scene.setDay({ w: wx.w, temp: wx.temp, gold: d === w.goldDay, label: `${dt.month}/${dt.date} (${C.dayNames[d]})`, event: info.event ? `🎌 ${info.event.name}` : d === w.djDay ? '🎧 DJ かっぱ イベント' : '' });
+            }
+            const slot = Sim.runSlot(s);
+            save();
+            if (skip) continue;
+            // できごと (その 日に 出す)
+            let special = null, specialSay = null;
+            if (t === 1 && d === w.goldDay) { special = 'goldDog'; specialSay = 'ゴールド金面犬だ！ 大入り！'; }
+            else if (t === 1 && d === w.djDay) { special = 'okagappa'; specialSay = 'YO！ DJ かっぱ！'; }
+            else if (t === 0 && d === w.tomoDay) { special = 'tomoishi'; specialSay = '抜き打ち チェック！'; }
+            else if (t === 2 && s.flags.shibata && (d + s.week) % 3 === 0) { special = 'shibata'; specialSay = 'いつもの 買いに 来たよ'; }
+            Scene.playSlot(slot, slotMs(), { special, specialSay });
+            const high = C.products.some(p => Sim.available(s, p.id) && s.prices[p.id] / p.price > Sim.regionOf(s).line * 1.08);
+            if (high && Math.random() < 0.4) Scene.say('高っ…', '#c03030');
+            renderLive(slot);
+            await sleep(slotMs());
+            // 手を 打てる タイミングで 自動で 止まる (設定で 切れる)
+            // 同じ 知らせで 何回も 止まらない (1 日 1 回 まで・同じ 商品の 同じ 知らせは 週に 1 回)
+            const al = s.wk ? Sim.alerts(s).map(a => ({ ...a, ids: (a.ids || []).filter(id => !alerted.has(`${a.kind}:${id}`)) })).filter(a => a.kind === 'queue' ? !alerted.has(`queue:${s.wk.d}`) : a.ids.length) : [];
+            if (pref().autoStop && al.length && s.wk && s.wk.d < 7 && !skip && stopDay !== s.wk.d) {
+                stopDay = s.wk.d;
+                for (const a of al) { if (a.kind === 'queue') alerted.add(`queue:${s.wk.d}`); for (const id of a.ids) alerted.add(`${a.kind}:${id}`); }
+                paused = true;
+                pauseWhy = alertText(al);
+                say('furukawa', pauseWhy);
+            }
+        }
+        const report = Sim.finishWeek(s);
         lastReport = report;
         save();
-        $('ticker').hidden = false;
-        $('skip-button').hidden = false;
-        let total = 0;
-        for (let d = 0; d < 7; d++) {
-            const day = report.days[d], dt = Sim.dateOf(report.week * 7 + d);
-            total += day.sales;
-            Scene.setDay({ w: day.w, temp: day.temp, gold: day.gold, label: `${dt.month}/${dt.date}` }, Math.min(1, day.customers / 900));
-            if (day.flags.high) Scene.say('高っ…', '#c03030');
-            if (day.flags.cheap) Scene.say('安っ！', '#2a8a3a');
-            if (day.flags.out) Scene.say('品切れ？', '#7a5a10');
-            if (day.walkAway > 30) Scene.say('レジ ならびすぎ…', '#555');
-            if (day.gold) Scene.say('ゴールド金面犬だ！', '#b08000');
-            if (day.dj) Scene.say('YO！ DJ かっぱ！', '#2050c0');
-            if (Object.values(report.limited).some(x => x.sold)) Scene.say('限定だ！', '#8030a0');
-            $('ticker').innerHTML = `<b>${dt.month}/${dt.date} (${C.dayNames[d]})</b> ${C.weather[day.w].icon} ${day.temp}℃　客 ${day.customers.toLocaleString()} 人${day.walkAway > 20 ? ` <em>(${day.walkAway} 人 帰った)</em>` : ''}　売上 ${man(day.sales)}<br><small>今週の 売上 ${man(total)}</small>`;
-            await wait(1100);
-        }
+        running = false; skip = false; paused = false; resumeFn = null;
+        $('game').classList.remove('live');
         $('ticker').hidden = true;
-        $('skip-button').hidden = true;
-        running = false;
-        skip = false;
-        $('go-button').disabled = false;
+        Scene.setLive(null);
+        closeInspect();
         showReport(report);
+    }
+    let resumeFn = null;
+    function resume() { paused = false; pauseWhy = ''; if (resumeFn) { const f = resumeFn; resumeFn = null; f(); } renderLive(); }
+    function alertText(al) {
+        const nm = ids => ids.slice(0, 2).map(id => Sim.product(id).name).join('・');
+        const slotName = s.wk ? C.slotNames[s.wk.t] : '';
+        const a = al[0];
+        if (a.kind === 'soon') return `${nm(a.ids)}、${slotName}に 売りきれ そう！ 棚を 調べて 品出し しよう。`;
+        if (a.kind === 'out') return `${nm(a.ids)}が 品切れ！ 倉庫に あれば すぐ 品出し、なければ 緊急発注も できるよ。`;
+        if (a.kind === 'expire') return `期限 今日までの 商品が 多いよ (${nm(a.ids)})。値下げを 考えよう。`;
+        if (a.kind === 'queue') return `レジに ならびすぎて ${a.n} 人 帰っちゃった！ シフトを 入れ替えよう。`;
+        return '';
+    }
+    // 営業中の パネル
+    function renderLive(slot) {
+        if (!s.wk) return;
+        const w = s.wk;
+        const total = w.acc.sales + (w.day ? w.day.sales : 0);
+        const last = slot || w.slots[w.slots.length - 1];
+        const d = last ? last.d : Math.min(6, w.d), dt = Sim.dateOf(s.week * 7 + d);
+        const nextName = w.d < 7 ? `${C.dayNames[w.d]}曜 ${C.slotNames[w.t]}` : '';
+        $('ticker').innerHTML = `<b>${dt.month}/${dt.date} (${C.dayNames[d]})</b> ${last ? C.slotNames[last.t] : ''}　${last ? `客 ${last.customers.toLocaleString()} 人${last.walkAway > 5 ? ` <em>(${last.walkAway} 人 帰った)</em>` : ''}` : ''}<br><small>今週の 売上 ${man(total)}</small>`;
+        // しるし (品切れ・品切れ しそう・期限が 近い)
+        const marks = {};
+        for (const p of C.products) if (Sim.available(s, p.id)) {
+            const inf = Sim.shelfInfo(s, p.id);
+            if (last && last.outs.includes(p.id)) marks[p.id] = 'out';
+            else if (inf.note === 'soon') marks[p.id] = 'soon';
+            else if (p.shelf && inf.exp.red > Math.max(10, (inf.cap || 0) * 0.25)) marks[p.id] = 'expire';
+        }
+        Scene.setLive({ slot: last ? last.t : 0, marks, callout: !!(w.act.callout[w.d * 3 + w.t] && paused) || !!(last && last.callout) });
+        const p = pref();
+        const staffRow = paused ? s.staff.filter(m => m.job === 'shop').map(m => `<div class="lv-staff">${img(Sim.staffDef(m.id).art, 28)}<b>${Sim.staffDef(m.id).name}</b>${C.slotNames.map((n, t) => `<button class="slotb${m.slots[t] ? ' on' : ''}" data-lshift="${m.id}" data-t="${t}">${n}</button>`).join('')}</div>`).join('') : '';
+        const k = w.d * 3 + w.t;
+        const hasCook = C.products.some(x => x.cook && Sim.available(s, x.id));
+        $('live').innerHTML = `<div class="lv-head">
+                <span class="lv-when">🏪 営業中 ${w.d < 7 ? `つぎは <b>${Sim.dateOf(s.week * 7 + w.d).month}/${Sim.dateOf(s.week * 7 + w.d).date} ${nextName}</b>` : ''}</span>
+                <span class="lv-btns"><button id="lv-play" class="mini ${paused ? 'go' : ''}">${paused ? '▶ つづける' : '⏸ 止める'}</button><button id="lv-skip" class="mini">スキップ ▶▶</button></span>
+            </div>
+            ${paused ? `<div class="lv-pause">${pauseWhy ? `<p class="lv-why">${pauseWhy}</p>` : ''}
+                <p class="note">お店の 絵の 棚を タップすると、その 棚の ようすを 調べて 値段・品出し・緊急発注が できる。下の 手は つぎの コマ (${nextName}) から きく。</p>
+                <div class="lv-acts">
+                    ${hasCook ? `<button class="mini" data-lact="cook"${w.act.cookBoost[k] ? ' disabled' : ''}>🍳 調理を 増やす${w.act.cookBoost[k] ? ' ✔' : ''}<small>調理 ×${C.midweek.cookBoost}・作りすぎると 廃棄</small></button>` : ''}
+                    <button class="mini" data-lact="callout"${w.act.callout[k] || !s.staff.some(m => m.id === 'koori' && m.job === 'shop') ? ' disabled' : ''}>📣 呼びこみ${w.act.callout[k] ? ' ✔' : ''}<small>来店 +${Math.round((C.midweek.callout - 1) * 100)}%・こおりくんは 働けない</small></button>
+                </div>
+                <h4>シフトの 入れ替え <small>(つぎの コマ から・入れ替えた 人は やる気 −${C.midweek.shiftMood})</small></h4>
+                <div class="lv-staffs">${staffRow}</div></div>` : ''}
+            <div class="lv-opts"><label><input type="checkbox" id="lv-auto"${p.autoStop ? ' checked' : ''}> 手を 打てる ときに 自動で 止まる</label><label><input type="checkbox" id="lv-skipall"${p.skipAll ? ' checked' : ''}> 毎週 スキップ</label></div>`;
+    }
+    $('live').addEventListener('click', e => {
+        const b = e.target.closest('button');
+        if (!b || !s.wk) return;
+        if (b.id === 'lv-play') { if (paused) resume(); else { paused = true; pauseWhy = ''; renderLive(); } }
+        else if (b.id === 'lv-skip') { skip = true; closeInspect(); resume(); fastForward(); }
+        else if (b.dataset.lact === 'cook') { if (Sim.midCook(s)) { say('yamamou', 'まかせて！ どんどん 作るよ！'); save(); renderLive(); } }
+        else if (b.dataset.lact === 'callout') { if (Sim.midCallout(s)) { say('koori', 'いらっしゃいませー！ 店の 前で 呼びこみ するよ！'); save(); renderLive(); } }
+        else if (b.dataset.lshift) { const m = s.staff.find(x => x.id === b.dataset.lshift); if (Sim.midShift(s, b.dataset.lshift, Number(b.dataset.t))) { say(Sim.staffDef(m.id).art, m.slots[Number(b.dataset.t)] ? `${C.slotNames[b.dataset.t]}も 入るよ！` : `${C.slotNames[b.dataset.t]}は 休むね`); save(); renderLive(); } }
     });
-    $('skip-button').addEventListener('click', () => { skip = true; });
+    $('live').addEventListener('change', e => {
+        if (e.target.id === 'lv-auto') setPref('autoStop', e.target.checked);
+        if (e.target.id === 'lv-skipall') setPref('skipAll', e.target.checked);
+    });
+    // スキップ: 待って いる sleep を すぐ おわらせる
+    function fastForward() { clearTimeout(liveTimer); liveTimer = null; if (sleepResolve) { const f = sleepResolve; sleepResolve = null; f(); } }
+
+    // ----- 棚を 調べる (2026-11-17 ユーザー指定: 指示書 10 章) -----
+    $('scene').addEventListener('click', e => {
+        if (!s) return;
+        const h = Scene.hit(e.clientX, e.clientY);
+        if (!h) return;
+        if (h.kind === 'fac') { const p = C.products.find(x => x.needs === h.id); if (p && Sim.available(s, p.id)) openInspect(p.id); else openFacInfo(h.id); }
+        else openInspect(h.id);
+    });
+    let inspectId = null;
+    function openInspect(id) {
+        inspectId = id;
+        if (running && !paused) { paused = true; pauseWhy = ''; resumeAfterInspect = true; } else resumeAfterInspect = false;
+        renderInspect();
+        $('inspect').hidden = false;
+        if (running) renderLive();
+    }
+    function openFacInfo(id) {
+        const f = Sim.facility(id);
+        inspectId = null;
+        $('inspect-box').innerHTML = `<h3>${f.icon} ${f.name}</h3><p class="note">${f.text}${f.warn ? `<br>⚠ ${f.warn}` : ''}<br>設備代 ${man(Sim.upkeepOf(s, id))}/週</p><button class="big" data-ins="close">とじる</button>`;
+        $('inspect').hidden = false;
+    }
+    function closeInspect() {
+        $('inspect').hidden = true;
+        inspectId = null;
+        if (resumeAfterInspect && running) { resumeAfterInspect = false; resume(); }
+    }
+    function renderInspect() {
+        const id = inspectId;
+        if (!id) return;
+        const inf = Sim.shelfInfo(s, id), p = inf.p, w = s.wk;
+        const live = running && w && w.d < 7;
+        const bar3 = arr => { const mx = Math.max(1, ...arr); return `<span class="bars">${arr.map((v, t) => `<span class="b"><i style="height:${Math.round(v / mx * 100)}%"></i><small>${C.slotNames[t]}</small></span>`).join('')}</span>`; };
+        let sales = '';
+        if (inf.live && inf.today) {
+            const tod = inf.today.reduce((a, b) => a + b, 0), last = inf.lastSame ? inf.lastSame.reduce((a, b) => a + b, 0) : null;
+            sales = `<div class="ins-row"><span>売れ行き</span><div>今日 <b>${tod}</b> こ ${last !== null ? (tod > last ? `<em class="up">↑ 先週の ${C.dayNames[inf.d]}曜 ${C.slotNames[inf.doneT - 1]}まで ${last}</em>` : tod < last ? `<em class="down">↓ 先週の ${C.dayNames[inf.d]}曜 ${C.slotNames[inf.doneT - 1]}まで ${last}</em>` : `<em>先週と 同じ</em>`) : ''}${bar3(inf.today)}</div></div>`;
+        } else {
+            sales = `<div class="ins-row"><span>売れ行き</span><div>${inf.weekSold ? `先週 <b>${inf.weekSold}</b> こ (1 日 ${Math.round(inf.weekSold / 7)} こ)` : 'まだ 売って いない'}</div></div>`;
+        }
+        const out = inf.live ? (inf.outT.length ? `<b class="bad">${inf.outT.map(t => C.slotNames[t]).join('・')}</b> に 品切れ・買えずに 帰った 客 ${inf.lostToday} 人` : '今日は なし') : (inf.weekLost ? `先週 ${inf.weekLost} こ 買えなかった` : '先週は なし');
+        const notes = { sellout: '品切れで 帰る 客が いる…', soon: `${w && w.d < 7 ? C.slotNames[w.t] : ''}に 売りきれ そう！`, left: '売れ残り ぎみ。値下げ しようか？', good: 'よく 売れてる！' };
+        const mg = inf.margin, rushQ = Math.max(10, Math.round(Sim.dailyNeed(s, id) * 0.5 / 10) * 10);
+        const capLine = inf.cap ? `<i class="bar"><i style="width:${Math.min(100, inf.onShelf / inf.cap * 100)}%"></i></i> <b>${inf.onShelf}</b> / ${inf.cap}` : `<b>${inf.onShelf}</b> (豆)`;
+        $('inspect-box').innerHTML = `<h3>${p.icon} ${p.name} <small>${live ? `${C.dayNames[Math.min(6, w.d)]}曜 ${C.slotNames[w.t]} の まえ` : '発注の 時間 (先週の 数字)'}</small></h3>
+            <div class="ins-row"><span>棚</span><div>${capLine}</div></div>
+            <div class="ins-row"><span>倉庫</span><div><b>${inf.ware}</b> こ <small>(品出し 待ち)</small></div></div>
+            ${p.shelf ? `<div class="ins-row"><span>期限</span><div><span class="exp g">🟢 ${inf.exp.green}</span><span class="exp y">🟡 ${inf.exp.yellow}</span><span class="exp r">🔴 今日まで ${inf.exp.red}</span></div></div>` : ''}
+            ${sales}
+            <div class="ins-row"><span>品切れ</span><div>${out}</div></div>
+            <div class="ins-row"><span>値段</span><div><span class="qty"><button data-ins="price" data-d="-1"${live || !running ? '' : ' disabled'}>−</button><b class="ins-price">${s.prices[id]}円</b><button data-ins="price" data-d="1"${live || !running ? '' : ' disabled'}>＋</button></span> 仕入れ ${mg.cost}円・もうけ <span class="${mg.yen <= 0 ? 'bad' : mg.rate < C.lowMargin ? 'warn' : 'good'}">${mg.yen >= 0 ? '+' : '−'}${Math.abs(mg.yen)}円 (${Math.round(mg.rate * 100)}%)</span>${live ? '<small><br>値段は つぎの コマ から</small>' : ''}</div></div>
+            ${inf.note ? `<div class="talk in">${img('furukawa', 36)}<p>${notes[inf.note]}</p></div>` : ''}
+            ${live ? `<div class="ins-acts">
+                ${!p.cook && !p.self ? `<button class="mini" data-ins="stock"${inf.ware ? '' : ' disabled'}>📦 すぐ 品出し<small>つぎの コマの 品出しの 力を つかう</small></button>` : ''}
+                ${p.cook ? `<button class="mini" data-ins="cook"${w.act.cookBoost[w.d * 3 + w.t] ? ' disabled' : ''}>🍳 調理を 増やす<small>つぎの コマ 調理 ×${C.midweek.cookBoost}</small></button>` : ''}
+                ${!p.self ? `<button class="mini" data-ins="rush"${w.d >= 6 ? ' disabled' : ''}>🚚 緊急発注 ${rushQ} こ<small>あしたの 朝 とどく・仕入れ ×${C.midweek.rushCost}・送料 ${man(C.midweek.rushFee)}${w.act.rush[`${w.d + 1}:${id}`] ? `・予約 ${w.act.rush[`${w.d + 1}:${id}`]} こ` : ''}</small></button>` : ''}
+            </div>` : ''}
+            <button class="big" data-ins="close">${running ? 'とじて つづける' : 'とじる'}</button>`;
+    }
+    $('inspect').addEventListener('click', e => {
+        if (e.target.id === 'inspect') { closeInspect(); return; }
+        const b = e.target.closest('[data-ins]');
+        if (!b) return;
+        const k = b.dataset.ins, id = inspectId;
+        if (k === 'close') { closeInspect(); return; }
+        if (!id) return;
+        const p = Sim.product(id);
+        if (k === 'price') { Sim.setPrice(s, id, s.prices[id] + Number(b.dataset.d) * C.priceStep); if (!running) renderOrder(Sim.weekInfo(s.week)); }
+        else if (k === 'stock') { const n = Sim.midStock(s, id); say('tamu', n ? `${p.name}を ${n} こ 棚に 出したよ！` : 'もう 出せる 力が のこって ない…'); }
+        else if (k === 'cook') { Sim.midCook(s); say('yamamou', 'まかせて！ どんどん 作るよ！'); }
+        else if (k === 'rush') { const q = Math.max(10, Math.round(Sim.dailyNeed(s, id) * 0.5 / 10) * 10); if (Sim.midRush(s, id, q)) say('nozoema', `${p.name} ${q} こ、あしたの 朝 とどけるぜ！`); }
+        save();
+        renderInspect();
+        if (running) renderLive();
+    });
+    $('skip-button').addEventListener('click', () => { skip = true; closeInspect(); resume(); fastForward(); });
 
     // ふるカワの ひとこと
     function furukawa(r) {
@@ -604,6 +780,11 @@
         start();
         if (params.get('tab')) document.querySelector(`.tabs button[data-tab="${params.get('tab')}"]`).click();
         if (params.get('report') === '1') { skip = true; $('go-button').click(); }
+        if (params.get('live')) { // 画面確認: 営業の 途中 (live = 何コマ 進めるか)
+            Sim.beginWeek(s); for (let i = 0; i < Number(params.get('live')); i++) Sim.runSlot(s);
+            resumeWeek();
+            if (params.get('inspect')) setTimeout(() => openInspect(params.get('inspect')), 300);
+        } else if (params.get('inspect')) setTimeout(() => openInspect(params.get('inspect')), 300);
         if (params.get('end')) { s.over = params.get('end'); ending(); if (params.get('story') !== '1') { storyIdx = 99; storyStep(); } }
         say('furukawa', '画面の 確認用の はじまり だよ。');
     } else if (params.get('story') === '1') $('new-button').click();

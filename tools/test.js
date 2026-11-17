@@ -198,6 +198,41 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     const old = JSON.parse(JSON.stringify(fresh())); delete old.costNow;
     check('古い セーブにも 仕入れ値が 入る', Sim.migrate(old).costNow.onigiri === Sim.product('onigiri').cost);
 }
+// 1 日ずつ・コマずつ 進める (2026-11-17 ユーザー決定: 指示書 10-2 案B)
+{
+    const a = freshO('kokura', 8), b = JSON.parse(JSON.stringify(a));
+    const ra = Sim.runWeek(a);
+    Sim.beginWeek(b);
+    let days = 0;
+    while (b.wk.d < 7) { Sim.runDay(b); days++; }
+    const rb = Sim.finishWeek(b);
+    check('1 日ずつ 進めても 1 週間 まとめて と 同じ', days === 7 && ra.sales === rb.sales && a.cash === b.cash && a.rs === b.rs);
+    check('コマは 21', rb.slots.length === Sim.SLOTS && rb.slots.every((x, i) => x.k === i));
+    const c = freshO('kokura', 8);
+    Sim.beginWeek(c); for (let i = 0; i < 10; i++) Sim.runSlot(c);
+    const c2 = JSON.parse(JSON.stringify(c));
+    check('営業の 途中で セーブしても 同じ 続き', Sim.runWeek(c).sales === Sim.runWeek(c2).sales && c.cash === c2.cash);
+    // 営業中の 手
+    const m = freshO('onga', 9); m.orders.onigiri = 400; m.staff.forEach(x => { x.role = 'register'; });
+    Sim.beginWeek(m); Sim.runSlot(m); Sim.runSlot(m);
+    const before = m.stock.onigiri.reduce((x, y) => x + y.q, 0);
+    const n = Sim.midStock(m, 'onigiri');
+    check('すぐ 品出しで 倉庫から 棚へ', n > 0 && m.stock.onigiri.reduce((x, y) => x + y.q, 0) === before + n, n);
+    const r0 = freshO('onga', 9), r1 = JSON.parse(JSON.stringify(r0));
+    Sim.beginWeek(r1); Sim.runSlot(r1);
+    check('緊急発注は 最後の 日は できない', Sim.midRush(r1, 'onigiri', 100) && (() => { const x = JSON.parse(JSON.stringify(r0)); Sim.beginWeek(x); while (x.wk.d < 6) Sim.runSlot(x); return !Sim.midRush(x, 'onigiri', 10); })());
+    const rr0 = Sim.runWeek(r0), rr1 = Sim.runWeek(r1);
+    check('緊急発注は つぎの 日に とどいて 高く つく', rr1.products.onigiri.ordered === rr0.products.onigiri.ordered + 100 && rr1.fees === rr0.fees + C.midweek.rushFee && rr1.products.onigiri.cost > rr0.products.onigiri.cost + 100 * Sim.costOf(r0, 'onigiri'));
+    const k0 = freshO('onga', 10), k1 = JSON.parse(JSON.stringify(k0));
+    Sim.beginWeek(k1); Sim.midCallout(k1);
+    Sim.beginWeek(k0);
+    const s0 = Sim.runSlot(k0), s1 = Sim.runSlot(k1);
+    check('呼びこみで その コマの 客が ふえる', s1.want > s0.want && s1.callout);
+    const sh = freshO('onga', 11); Sim.beginWeek(sh); const mood0 = sh.staff[1].mood;
+    check('営業中の シフト入れ替えで やる気が 下がる', Sim.midShift(sh, sh.staff[1].id, 2) && sh.staff[1].mood === mood0 - C.midweek.shiftMood && sh.staff[1].slots[2] === 0);
+    const info = Sim.shelfInfo(Sim.runWeek(freshO('onga', 12)) && (() => { const x = freshO('onga', 12); Sim.runWeek(x); return x; })(), 'onigiri');
+    check('棚を 調べると 先週の 数字が 出る', info && !info.live && info.weekSold > 0 && info.cap > 0);
+}
 // 難易度
 {
     const e = Sim.newGame('t', 1, 'onga', 'easy'), h = Sim.newGame('t', 1, 'onga', 'hard'), x = Sim.newGame('t', 1, 'onga');
@@ -281,7 +316,7 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     const N = 20, all = {};
     for (const diff of Object.keys(C.difficulties)) {
         const res = all[diff] = {};
-        for (const name of diff === 'normal' ? ['idle', 'normal', 'good', 'reckless'] : ['normal', 'good']) {
+        for (const name of diff === 'normal' ? ['idle', 'normal', 'good', 'midweek', 'reckless'] : ['normal', 'good']) {
             const r = { clear: 0, normal: 0, bad: 0, n: 0, weeks: [], regions: {} };
             for (const region of C.regions.map(x => x.id)) for (let i = 1; i <= N; i++) {
                 const { s } = St.play(St[name], i * 7919, region, diff);
@@ -301,6 +336,7 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     check('ふつう: 工夫すれば クリア できる (3〜6 割)', n.good.clear >= n.good.n * 0.3 && n.good.clear <= n.good.n * 0.6, n.good.clear);
     check('ふつう: クリアは 後半 (平均 第 24 週 より あと)', avgW(n.good) > 24, avgW(n.good));
     check('ふつう: どの 地域でも 工夫すれば クリア できる', C.regions.every(r => (n.good.regions[r.id] || 0) >= 3), JSON.stringify(n.good.regions));
+    check('ふつう: 営業中も 手を 打つと 少し 有利 (工夫より 1 割 くらい 上まで。20 回 ずつ なので ばらつきの ぶん 2 割まで。60 回 ずつ だと +8% くらい)', n.midweek.clear >= n.good.clear - 2 && n.midweek.clear <= n.good.clear + n.good.n * 0.2, `${n.midweek.clear} / ${n.good.clear}`);
     check('ふつう: むちゃな 借金は 返せない', n.reckless.bad >= n.reckless.n * 0.8, n.reckless.bad);
     // やさしい・むずかしい
     check('やさしい: 目安 だけでも ときどき クリア できる', e.normal.clear >= e.normal.n * 0.2, e.normal.clear);

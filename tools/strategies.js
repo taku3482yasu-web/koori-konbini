@@ -128,20 +128,32 @@ function reckless(s) {
     for (const p of C.products) s.prices[p.id] = Math.round(p.price * 0.7 / 10) * 10;
 }
 
+// 営業中も 手を 打つ (2026-11-17 ユーザー決定: 案B)。週の はじめは 工夫と 同じ
+function midweek(s) { good(s); }
+midweek.mid = s => {
+    // 品切れ しそう・品切れの 棚は すぐ 品出し (呼びこみ・緊急発注は 自動プレイでは つかわない: 品切れが ふえて 評判が 下がる ことが 多い)
+    for (const a of Sim.alerts(s)) if (a.kind === 'soon' || a.kind === 'out') for (const id of a.ids) Sim.midStock(s, id);
+};
+
 function play(strategy, seed, region, diff, mode, weeks) {
     const s = Sim.newGame('テスト', seed, region, diff, mode);
     let reports = 0;
-    while (!s.over && !(weeks && s.week >= weeks)) { strategy(s); Sim.runWeek(s); reports++; }
+    while (!s.over && !(weeks && s.week >= weeks)) {
+        strategy(s);
+        if (strategy.mid) { Sim.beginWeek(s); while (s.wk.d < 7) { Sim.runSlot(s); if (s.wk.d < 7) strategy.mid(s); } Sim.finishWeek(s); }
+        else Sim.runWeek(s);
+        reports++;
+    }
     const rank = Sim.ranking(s).findIndex(x => x.me) + 1;
     return { s, rank, clearWeek: s.over === 'clear' ? s.week : null };
 }
 
-module.exports = { idle, normal, good, reckless, play };
+module.exports = { idle, normal, good, midweek, reckless, play };
 
 if (require.main === module) {
     const N = Number(process.argv[2]) || 30;
     for (const region of C.regions.map(r => r.id)) {
-        for (const name of ['idle', 'normal', 'good', 'reckless']) {
+        for (const name of ['idle', 'normal', 'good', 'midweek', 'reckless']) {
             const res = { clear: 0, normal: 0, bad: 0, weeks: [], rank: 0, debt: 0, cash: 0, rep: 0, sales: 0 };
             for (let i = 1; i <= N; i++) {
                 const { s, rank, clearWeek } = play(module.exports[name], i * 7919, region);
