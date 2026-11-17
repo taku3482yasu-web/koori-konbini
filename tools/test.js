@@ -62,7 +62,7 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
 {
     const s = fresh(); s.cash = 1e8;
     for (const f of C.facilities) Sim.buyFacility(s, f.id);
-    check('施設は 床の あいて いる マス まで', s.facilities.length === C.floor - 8 && Sim.floorUsed(s) === C.floor);
+    check('施設は 床の あいて いる マス まで', s.facilities.length === Sim.floorCap(s) - 8 && Sim.floorUsed(s) === Sim.floorCap(s));
     check('駐車場は 駅前で 高い', Sim.facCost(fresh('kokura'), 'parking') > Sim.facCost(fresh('onga'), 'parking') * 3);
     const n = fresh(); n.cash = 1e8; Sim.buyFacility(n, 'coffee'); orderAll(n);
     check('コーヒーマシンで コーヒーが 売れる', Sim.available(n, 'coffee') && Sim.runWeek(n).products.coffee.sold > 0);
@@ -95,7 +95,7 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     check('棚が ない 商品は 発注できない', s.orders.snack === 0);
     for (const id of ['bread', 'daily']) Sim.removeShelf(s, id);
     for (const f of C.facilities) Sim.buyFacility(s, f.id);
-    check('棚を 撤去すると 施設を 多く 置ける', s.facilities.length === C.maxFacilities, s.facilities.length);
+    check('棚を 撤去すると 施設を 多く 置ける', s.facilities.length === Sim.facCap(s), s.facilities.length);
     check('コーヒーは 棚が いらない', Sim.available(s, 'coffee') || !Sim.hasFac(s, 'coffee'));
 }
 // 季節の レアスタッフ (2026-11-17 ユーザー指定)
@@ -120,6 +120,52 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     check('レアが 店に いると 得意な 商品が 売れる', Sim.productFactor(s, Sim.product('ice'), 28, 'sun', null) > base * 1.3);
     check('やとった レアは 記録に のこる', s.everHired.includes('kakigoora'));
     check('スタッフを 解雇できる (店長は できない)', Sim.fire(s, 'kakigoora') && !s.staff.some(m => m.id === 'kakigoora') && !Sim.fire(s, 'koori'));
+}
+// エンドレス・店を 大きく・棚の 種類・商品と 施設と 連携 (2026-11-17 ユーザー指定)
+{
+    const { s } = St.play(St.normal, 11, 'onga', 'normal', 'endless', 120);
+    check('エンドレスは 52 週を こえて つづく', s.week === 120 && !s.over, `week=${s.week} over=${s.over}`);
+    check('エンドレスの こよみは 1 年で もどる', Sim.weekInfo(52).start.month === 4 && Sim.weekInfo(52).start.date === 1 && Sim.yearOf(52) === 2);
+    check('エンドレスでも 行事は 毎年 ある', Sim.weekInfo(52 + 4).event && Sim.weekInfo(52 + 4).event.name === Sim.weekInfo(4).event.name);
+    check('エンドレスでも 数が こわれない', s.history.every(h => h.moved || Number.isFinite(h.sales)));
+    const c = St.play(St.good, 3, 'kokura', 'normal', 'endless', 60).s;
+    check('エンドレスは 1 位に なっても おわらない', !c.over);
+
+    const e = fresh(); e.cash = 1e8; e.rep = 30;
+    check('評判が 足りないと 店を 大きく できない', !Sim.expandStore(e));
+    e.rep = 95; e.cash = 100000;
+    check('お金が 足りないと 店を 大きく できない', !Sim.expandStore(e));
+    e.cash = 1e8; const f0 = Sim.floorCap(e), r0 = Sim.rentOf(e);
+    check('お金と 評判が あれば 店を 大きく できる', Sim.expandStore(e) && Sim.floorCap(e) > f0 && Sim.rentOf(e) > r0 && Sim.levelOf(e).traffic > 1);
+    while (Sim.expandStore(e));
+    check(`店は ${C.storeLevels.length} だんかいまで`, e.storeLv === C.storeLevels.length - 1);
+
+    check('棚の 種類が 分かれて いる (アイスは 冷凍・ドリンクは 飲料ケース)', Sim.product('ice').type === 'freezer' && Sim.product('drink').type === 'drinkcase' && Sim.product('frozen').type === 'freezer');
+    const t = fresh(); t.cash = 1e7; const c0 = t.cash;
+    Sim.addShelf(t, 'magazine');
+    const rackCost = c0 - t.cash; const c1 = t.cash;
+    Sim.addShelf(t, 'frozen');
+    check('棚の 種類で 値段が ちがう', rackCost === C.shelfTypes.rack.cost && c1 - t.cash === C.shelfTypes.freezer.cost);
+    check('冷蔵・冷凍の 棚は 電気代が かかる', Sim.shelfUpkeep(t) > Sim.shelfUpkeep(fresh()));
+    check('コンビニの 商品が ひと通り ある', ['newspaper', 'magazine', 'clothing', 'cosme', 'stationery', 'frozen', 'sweets', 'cupnoodle', 'nikuman', 'giftcard'].every(id => Sim.product(id)) && C.products.length >= 25);
+    const n = freshO('onga', 4); n.cash = 1e7;
+    for (const id of ['bread', 'daily']) Sim.removeShelf(n, id);
+    Sim.addShelf(n, 'newspaper'); Sim.addShelf(n, 'cosme'); orderAll(n);
+    const rn = Sim.runWeek(n);
+    check('新しい 商品も 棚を 置けば 売れる', rn.products.newspaper.sold > 0 && rn.products.cosme.sold > 0);
+    check('施設が ふえた', ['steamer', 'copy', 'locker', 'toilet', 'bakery', 'ev', 'kids', 'ticket'].every(id => Sim.facility(id)));
+    const k = fresh(); k.cash = 1e7; Sim.buyFacility(k, 'steamer');
+    check('中華まんスチーマーで 中華まんが 売れる', Sim.available(k, 'nikuman'));
+    check('業務連携の 会社が ふえた', ['fishery', 'logistics', 'delivery', 'cleaning', 'staffing', 'gacha'].every(id => Sim.partner(id)));
+    const l = freshO('onga', 5), l2 = freshO('onga', 5);
+    Sim.setPartner(l2, 'logistics', true); Sim.setPartner(l2, 'staffing', true);
+    check('運輸と 連携すると 検品が はやい', Sim.runWeek(l2).work.checkCap[0] > Sim.runWeek(l).work.checkCap[0]);
+    check('人材派遣で レジが ふえる', Sim.slotCap(l2, 0) > Sim.slotCap(l, 0));
+    const u = fresh(); Sim.setPartner(u, 'fishery', true); runN(u, 2);
+    check('漁協と 連携すると 海の さちが とどく', u.mats.umi >= 2);
+    const old = JSON.parse(JSON.stringify(fresh())); delete old.storeLv; delete old.mode; delete old.stock.cosme; delete old.shelves;
+    Sim.migrate(old);
+    check('古い セーブも 読める', old.storeLv === 0 && old.mode === 'year' && Array.isArray(old.stock.cosme) && old.shelves.onigiri === 1);
 }
 // 難易度
 {
@@ -167,7 +213,7 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     check('給料 = 時給 × 時間', rp.wages === Sim.staffDef('yasu').pay * C.hoursPerSlot * 7 * 2, rp.wages);
     const up = fresh(); up.cash = 1e7; Sim.buyFacility(up, 'coffee');
     const ru = Sim.runWeek(up);
-    check('設備代を 毎週 はらう', ru.upkeep === C.baseUpkeep + Sim.facility('coffee').upkeep && ru.profit === ru.sales - ru.buy - ru.limitedCost - ru.wages - ru.rent - ru.upkeep - ru.royalty - ru.fees);
+    check('設備代を 毎週 はらう', ru.upkeep === C.baseUpkeep + Sim.shelfUpkeep(up) + Sim.facility('coffee').upkeep && ru.profit === ru.sales - ru.buy - ru.limitedCost - ru.wages - ru.rent - ru.upkeep - ru.royalty - ru.fees);
     const s = fresh(); s.cash = 1e7; s.applicants = ['dake'];
     Sim.hire(s, 'dake');
     check('やとえる', s.staff.length === 3);

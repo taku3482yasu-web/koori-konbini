@@ -8,7 +8,7 @@
     const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const img = (id, size = 36) => (id ? `<img class="face" src="${Art.icon(id, size)}" alt="" width="${size}" height="${size}">` : '<span class="face blank">？</span>');
     const params = new URLSearchParams(location.search);
-    let s = null, running = false, skip = false, lastReport = null, difficulty = 'normal';
+    let s = null, running = false, skip = false, lastReport = null, difficulty = 'normal', mode = 'year', showLocked = false;
 
     // レアスタッフ図鑑 (2026-11-17 ユーザー指定: やりこみ)。何回 遊んでも のこる
     const ZUKAN_KEY = 'koori-konbini-zukan';
@@ -22,7 +22,7 @@
     }
     const RARES = C.staff.filter(d => d.rare);
     function save() { saveZukan(); try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch (e) { /* なし */ } }
-    function load() { try { const v = JSON.parse(localStorage.getItem(SAVE_KEY)); return v && v.version === 2 && !v.over ? v : null; } catch (e) { return null; } }
+    function load() { try { const v = JSON.parse(localStorage.getItem(SAVE_KEY)); return v && v.version === 2 && !v.over ? Sim.migrate(v) : null; } catch (e) { return null; } }
     function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* なし */ } }
     function show(id) { ['title', 'story', 'region', 'game'].forEach(x => { $(x).hidden = x !== id; }); }
 
@@ -43,7 +43,10 @@
     function renderDiff() {
         $('diff-row').innerHTML = Object.entries(C.difficulties).map(([k, d]) => `<button class="chip${difficulty === k ? ' on' : ''}" data-diff="${k}">${d.name}</button>`).join('');
         $('diff-text').textContent = C.difficulties[difficulty].text;
+        $('mode-row').innerHTML = Object.entries(C.modes).map(([k, d]) => `<button class="chip${mode === k ? ' on' : ''}" data-mode="${k}">${d.name}</button>`).join('');
+        $('mode-text').textContent = C.modes[mode].text;
     }
+    $('mode-row').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (b) { mode = b.dataset.mode; renderDiff(); } });
     $('diff-row').addEventListener('click', e => { const b = e.target.closest('[data-diff]'); if (b) { difficulty = b.dataset.diff; renderDiff(); } });
     $('new-button').addEventListener('click', () => story(OPENING, regionSelect));
     $('continue-button').addEventListener('click', () => { s = load(); if (s) { start(); say('furukawa', 'つづきから だね。今週も たのむよ！'); } });
@@ -91,7 +94,7 @@
         const b = e.target.closest('[data-region]');
         if (!b) return;
         const seed = params.get('seed') ? Number(params.get('seed')) : Math.floor(Math.random() * 2 ** 31);
-        s = Sim.newGame($('store-name').value.trim() || 'こおりマート', seed, b.dataset.region, difficulty);
+        s = Sim.newGame($('store-name').value.trim() || 'こおりマート', seed, b.dataset.region, difficulty, mode);
         start();
         say('furukawa', `${Sim.regionOf(s).name}に 開店！ 店は からっぽ。商品は 発注しないと とどかないよ。まずは 発注 (「ぜんぶ 目安に」でも いい) と シフト・持ち場を きめて「営業する」だ。`);
     });
@@ -108,7 +111,7 @@
     let tab = 'order';
     function render() {
         const info = Sim.weekInfo(s.week);
-        $('when-week').textContent = `第 ${s.week + 1} 週`;
+        $('when-week').textContent = s.mode === 'endless' ? `${Sim.yearOf(s.week)} 年目 第 ${s.week % C.weeks + 1} 週` : `第 ${s.week + 1} 週`;
         $('when-date').textContent = `${info.start.month}/${info.start.date}〜${info.end.month}/${info.end.date}・${Sim.diffOf(s).name}`;
         $('stat-cash').textContent = man(s.cash);
         $('stat-cash').className = s.cash < 0 ? 'bad' : '';
@@ -135,15 +138,18 @@
         const fc = s.forecast.map((f, i) => `<div class="fc"><small>${C.dayNames[i]}</small><span>${C.weather[f.w].icon}</span><small>${f.temp}℃</small></div>`).join('');
         const ev = info.event ? `<div class="event">🎌 今週は <b>${info.event.name}</b>${info.event.text ? `　${info.event.text}` : ''}</div>` : '';
         const next = C.events.find(e => e.week === s.week + 1);
+        let lastCat = null;
         const rows = C.products.map(p => {
-            if (!Sim.available(s, p.id)) return `<tr class="locked"><td class="icon">${p.icon}</td><td colspan="6">${p.name} <small>(施設「${Sim.facility(p.needs).name}」で 売れる)</small></td></tr>`;
+            const head = p.cat !== lastCat ? `<tr class="cat"><th colspan="7">${C.cats[p.cat]}</th></tr>` : '';
+            lastCat = p.cat;
+            if (!Sim.available(s, p.id)) return head + (showLocked ? `<tr class="locked"><td class="icon">${p.icon}</td><td colspan="6">${p.name} <small>(${p.needs && !Sim.hasFac(s, p.needs) ? `施設「${Sim.facility(p.needs).name}」で 売れる` : `「棚・施設」で ${C.shelfTypes[p.type].name}を 置くと 売れる`})</small></td></tr>` : '');
             const l = lastOf(p.id);
             const ratio = s.prices[p.id] / p.price;
             const voice = ratio > r.line * 1.08 ? '<span class="voice high">高っ…</span>' : ratio < C.cheapLine ? '<span class="voice cheap">安っ！</span>' : '';
             const qOf = k => (s[k][p.id] || []).reduce((a, b) => a + b.q, 0);
             const stockText = p.self ? `豆 ${qOf('ware')}` : `棚 ${qOf('stock')}<small>/${Sim.capOf(s, p)}</small><br>倉庫 ${qOf('ware') + qOf('back')}`;
             const lastText = l ? `${Math.round(l.sold / Math.max(1, l.open))}${l.lost ? ` <em class="lost">逃${Math.round(l.lost / Math.max(1, l.open))}</em>` : ''}${l.refused ? ` <em class="lost">断${Math.round(l.refused / 7)}</em>` : ''}${l.waste ? ` <em class="waste">廃${Math.round(l.waste / 7)}</em>` : ''}${l.kids ? ` <em class="kids">食${Math.round(l.kids / 7)}</em>` : ''}` : '-';
-            return `<tr>
+            return `${head}<tr>
                 <td class="icon">${p.icon}</td>
                 <td class="pname">${p.name}${prefMark(p.id)}<small>${p.shelf ? `期限 ${p.shelf} 日` : '日持ちする'}・仕入れ ${p.cost}円${p.cook ? '・調理' : ''}</small></td>
                 <td class="qty price"><button data-price="${p.id}" data-d="-1">−</button><b>${s.prices[p.id]}円</b><button data-price="${p.id}" data-d="1">＋</button>${voice}</td>
@@ -164,7 +170,7 @@
             <div class="forecast"><span class="lbl">天気予報</span>${fc}</div>
             <div class="ware"><span>📦 倉庫</span><i class="bar"><i style="width:${Math.min(100, Sim.wareUse(s) / Sim.wareCap(s) * 100)}%"></i></i><b>${Sim.wareUse(s).toLocaleString()} / ${Sim.wareCap(s).toLocaleString()}</b></div>
             <p class="note">商品は 発注しないと とどかない。毎朝 とどいた 商品は 検品して 倉庫へ、品出しで 棚へ。客が 買えるのは 棚の 商品だけ。倉庫が いっぱいだと 受け取れない。</p>
-            <div class="order-head"><span>値段と 毎朝 とどく 数</span><button id="auto-all" class="mini">ぜんぶ 目安に</button></div>
+            <div class="order-head"><span>値段と 毎朝 とどく 数</span><span><label class="chip${showLocked ? ' on' : ''}"><input type="checkbox" id="show-locked"${showLocked ? ' checked' : ''}>売って いない 商品も 見る</label> <button id="auto-all" class="mini">ぜんぶ 目安に</button></span></div>
             <div class="table-wrap"><table class="orders"><thead><tr><th></th><th>商品</th><th>値段</th><th>先週/日</th><th>在庫</th><th>発注/日</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
             <p class="note">逃 = 品切れで 買えなかった・断 = 倉庫が いっぱいで 受け取れなかった・廃 = 廃棄・食 = 子ども食堂へ。↑↓ = この 地域の 好み (売って いくと 分かる)。</p>
             <h3>期限 今日までの 商品</h3>
@@ -248,22 +254,28 @@
     }
 
     function renderShop() {
-        const used = Sim.floorUsed(s), full = used >= C.floor;
-        const shelfRows = C.products.filter(p => !p.cook && !p.self).map(p => {
-            const n = Sim.shelfUnits(s, p.id);
-            return `<div class="item${n ? '' : ' have'}"><span class="ui">${p.icon}</span><div><b>${p.name}の 棚 ×${n}</b><small>${n ? `${Sim.capOf(s, p)} こ ならぶ` : '棚が ないので 売れない'}</small></div>
-                <span class="btns">${n ? `<button class="mini" data-unshelf="${p.id}">撤去</button>` : ''}<button class="mini" data-shelf="${p.id}"${full || s.cash < C.shelf.cost ? ' disabled' : ''}>＋棚 ${man(C.shelf.cost)}</button></span></div>`;
+        const cap = Sim.floorCap(s), used = Sim.floorUsed(s), full = used >= cap, lv = Sim.levelOf(s), ex = Sim.canExpand(s);
+        const expand = ex.max ? `<p class="good">これ いじょう 大きく できない (いちばん 大きい 店)</p>`
+            : `<div class="item"><span class="ui">🏗</span><div><b>「${ex.next.name}」に 大きく する</b><small>床 ${lv.floor} → ${ex.next.floor} マス・施設 ${lv.maxFac} → ${ex.next.maxFac} こ・客 ×${ex.next.traffic}・家賃 +${man(ex.next.rentAdd - lv.rentAdd)}/週<br>いる もの: お金 <span class="${ex.cash ? 'good' : 'bad'}">${man(ex.next.cost)}</span>・評判 <span class="${ex.rep ? 'good' : 'bad'}">${ex.next.rep} 以上 (いま ${Math.round(s.rep)})</span></small></div><button data-expand${ex.ok ? '' : ' disabled'}>${man(ex.next.cost)}</button></div>`;
+        const groups = Object.entries(C.shelfTypes).map(([tid, ty]) => {
+            const rows = C.products.filter(p => p.type === tid && !p.cook && !p.self).map(p => {
+                const n = Sim.shelfUnits(s, p.id);
+                return `<div class="item${n ? '' : ' have'}"><span class="ui">${p.icon}</span><div><b>${p.name} ×${n}</b><small>${n ? `${Sim.capOf(s, p)} こ ならぶ` : '棚が ないので 売れない'}</small></div>
+                    <span class="btns">${n ? `<button class="mini" data-unshelf="${p.id}">撤去</button>` : ''}<button class="mini" data-shelf="${p.id}"${full || s.cash < ty.cost ? ' disabled' : ''}>＋${man(ty.cost)}</button></span></div>`;
+            }).join('');
+            return `<h4>${ty.icon} ${ty.name} <small>1 台 ${man(ty.cost)}${ty.upkeep ? `・電気代 ${man(ty.upkeep)}/週` : ''}・${ty.text}</small></h4><div class="shop">${rows}</div>`;
         }).join('');
-        $('tab-shop').innerHTML = `<div class="ware"><span>🏪 床</span><i class="bar"><i style="width:${used / C.floor * 100}%"></i></i><b>${used} / ${C.floor} マス</b></div>
-            <p class="note">棚 1 台と 施設 1 つで 1 マス ずつ つかう。棚を ふやすと たくさん ならべられ (品出しの 回数が へる)、撤去すると 施設を 置ける。棚が 0 台の 商品は 売れない。撤去すると 棚は ${Math.round(C.shelf.refund * 100)}%・施設は ${Math.round(C.sellBack * 100)}% お金が もどる。</p>
-            <h3>棚</h3><div class="shop">${shelfRows}</div>
+        $('tab-shop').innerHTML = `<h3>🏪 店の 大きさ: ${lv.name}</h3>${expand ? `<div class="shop">${expand}</div>` : ''}
+            <div class="ware"><span>床</span><i class="bar"><i style="width:${used / cap * 100}%"></i></i><b>${used} / ${cap} マス</b></div>
+            <p class="note">棚 1 台と 施設 1 つで 1 マス ずつ つかう。棚は 種類ごとに 置ける 商品が きまって いる (アイスは 冷凍ケース・ドリンクは 飲料ケース など)。棚を ふやすと たくさん ならべられ (品出しの 回数が へる)、撤去すると 施設を 置ける。棚が 0 台の 商品は 売れない。撤去すると 棚は ${Math.round(C.shelf.refund * 100)}%・施設は ${Math.round(C.sellBack * 100)}% お金が もどる。</p>
+            <h3>棚</h3>${groups}
             <h3>倉庫</h3><div class="shop"><div class="item"><span class="ui">📦</span><div><b>倉庫を 広げる</b><small>いま ${Sim.wareCap(s).toLocaleString()} こ → +${C.warehouse.add.toLocaleString()} こ・設備代 +${man(C.warehouse.upkeep)}/週 (あと ${C.warehouse.max - s.wareLv} 回)。マスは つかわない</small></div><button data-ware${s.wareLv >= C.warehouse.max || s.cash < C.warehouse.cost ? ' disabled' : ''}>${man(C.warehouse.cost)}</button></div></div>
-            <h3>施設 (${s.facilities.length} / ${C.maxFacilities})</h3>
+            <h3>施設 (${s.facilities.length} / ${Sim.facCap(s)})</h3>
             <p class="note">施設ごとに 集まる 客が ちがう。買う ときの お金の ほかに、毎週 設備代 (リース・電気代) が かかる。</p>
-            <p>今週の 設備代 <b>${man(Sim.upkeep(s))}</b> <small class="note">(店の 基本の 設備 ${man(C.baseUpkeep)}${s.wareLv ? ` + 倉庫 ${man(C.warehouse.upkeep * s.wareLv)}` : ''}${s.facilities.map(id => ` + ${Sim.facility(id).name} ${man(Sim.upkeepOf(s, id))}`).join('')})</small></p><div class="shop">${C.facilities.map(f => {
+            <p>今週の 設備代 <b>${man(Sim.upkeep(s))}</b> <small class="note">(店の 基本 ${man(C.baseUpkeep)}・棚の 電気代 ${man(Sim.shelfUpkeep(s))}${s.wareLv ? `・倉庫 ${man(C.warehouse.upkeep * s.wareLv)}` : ''}${s.facilities.map(id => `・${Sim.facility(id).name} ${man(Sim.upkeepOf(s, id))}`).join('')})</small></p><div class="shop">${C.facilities.map(f => {
             const have = Sim.hasFac(s, f.id), cost = Sim.facCost(s, f.id);
             return `<div class="item${have ? ' have' : ''}"><span class="ui">${f.icon}</span><div><b>${f.name}</b><small>${f.text}・設備代 ${man(Sim.upkeepOf(s, f.id))}/週${f.warn ? `<br><span class="warn">⚠ ${f.warn}</span>` : ''}</small></div>
-                ${have ? `<button class="mini" data-remove="${f.id}">撤去</button>` : `<button data-buy="${f.id}"${s.cash < cost || full || s.facilities.length >= C.maxFacilities ? ' disabled' : ''}>${man(cost)}</button>`}</div>`;
+                ${have ? `<button class="mini" data-remove="${f.id}">撤去</button>` : `<button data-buy="${f.id}"${s.cash < cost || full || s.facilities.length >= Sim.facCap(s) ? ' disabled' : ''}>${man(cost)}</button>`}</div>`;
         }).join('')}</div>`;
     }
 
@@ -298,7 +310,7 @@
         const segs = s.history.length ? lastReport && lastReport.segServed : null;
         const segText = segs ? Sim.SEGS.map(g => `${C.segments[g].icon} ${C.segments[g].name} ${Math.round(segs[g] / 7)}人`).join('・') : '営業すると 分かる';
         const others = C.regions.filter(x => x.id !== s.region).map(x => `<div class="item"><span class="ui">${x.icon}</span><div><b>${x.name}</b><small>${x.text}・家賃 ${man(x.rent)}/週</small></div><button data-move="${x.id}"${s.cash < C.moveCost ? ' disabled' : ''}>移転 ${man(C.moveCost)}</button></div>`).join('');
-        $('tab-area').innerHTML = `<h3>${r.icon} ${r.name}</h3><p>${r.text}<br>家賃 ${man(r.rent)}/週・特産品 ${r.local.icon} ${r.local.name}</p>
+        $('tab-area').innerHTML = `<h3>${r.icon} ${r.name}</h3><p>${r.text}<br>家賃 ${man(Sim.rentOf(s))}/週 (${Sim.levelOf(s).name})・特産品 ${r.local.icon} ${r.local.name}</p>
             <p>先週の 客 (1 日): ${segText}</p>
             <p>常連 <b>${s.regulars}</b> 人</p>
             <h3>この 地域の 好み</h3><div class="prefs">${prefs}</div><p class="note">${C.knowWeeks} 週 売ると 分かる。↑ よく 売れる・↓ 売れにくい</p>
@@ -310,13 +322,13 @@
         $('tab-rank').innerHTML = `<h3>コンビニランキング</h3><ol class="rank">${list.map((x, i) => {
             const cr = C.rivals.find(r => r.name === x.name);
             return `<li class="${x.me ? 'me' : ''}"><span class="no">${i + 1}</span>${img(x.me ? 'koori' : x.owner, 36)}<div><b>${esc(x.name)}</b><small>${x.me ? '店長 こおりくん' : `${cr.boss}「${cr.line}」`}</small></div><span class="sum">${x.score} 点</span></li>`;
-        }).join('')}</ol><p class="note">点 = 直近 ${C.rankWeeks} 週の 売上の 平均 (万円) + 評判 × 0.5。毎週 発表。1 位に なったら クリア！ のこり ${C.weeks - s.week} 週。</p>`;
+        }).join('')}</ol><p class="note">点 = 直近 ${C.rankWeeks} 週の 売上の 平均 (万円) + 評判 × 0.5。毎週 発表。${s.mode === 'endless' ? `エンドレス: 1 位に なっても つづく。${s.clearedWeek !== null ? `はじめて 1 位に なったのは 第 ${s.clearedWeek} 週。` : ''}` : `1 位に なったら クリア！ のこり ${C.weeks - s.week} 週。`}</p>`;
     }
 
     function updateCost() {
         const buy = C.products.reduce((a, p) => a + (Sim.available(s, p.id) ? (s.orders[p.id] || 0) * p.cost * 7 : 0), 0);
         const fees = C.partners.filter(p => !p.perUse && s.partners[p.id].on).reduce((a, p) => a + Sim.partnerFee(s, p.id), 0) + (s.eventDay >= 0 ? Sim.partnerFee(s, 'event') : 0);
-        $('cost-note').innerHTML = `仕入れ 約${man(buy)}・給料 ${man(Sim.wages(s))}・家賃 ${man(Sim.regionOf(s).rent)}・設備代 ${man(Sim.upkeep(s))}${fees ? `・連携 ${man(fees)}` : ''}`;
+        $('cost-note').innerHTML = `仕入れ 約${man(buy)}・給料 ${man(Sim.wages(s))}・家賃 ${man(Sim.rentOf(s))}・設備代 ${man(Sim.upkeep(s))}${fees ? `・連携 ${man(fees)}` : ''}`;
     }
 
     // ----- 操作 -----
@@ -352,9 +364,10 @@
         else if (d.hire) { if (Sim.hire(s, d.hire)) { say(Sim.staffDef(d.hire).art, `${Sim.staffDef(d.hire).name}です！ よろしく おねがいします！`); render(); } }
         else if (d.item) { if (Sim.useItem(s, d.item)) { say('koori', `${C.items[d.item].name}を つかった！ ${C.items[d.item].text}`); render(); } }
         else if (d.buy) { const f = Sim.facility(d.buy); if (Sim.buyFacility(s, f.id)) { say('koori', `「${f.name}」を 置いたよ！ ${f.text}`); render(); } }
+        else if ('expand' in d) { const nx = Sim.canExpand(s).next; if (nx && confirm(`「${nx.name}」に 大きく する？ ${man(nx.cost)} かかる。家賃も 上がる`)) { Sim.expandStore(s); say('furukawa', `おめでとう！ 「${Sim.levelOf(s).name}」に なった！ 床が ${Sim.floorCap(s)} マスに ふえたよ。`); render(); } }
         else if ('ware' in d) { if (Sim.expandWare(s)) { say('koori', `倉庫を 広げたよ！ ${Sim.wareCap(s).toLocaleString()} こ 入る`); render(); } }
         else if (d.remove) { if (confirm(`「${Sim.facility(d.remove).name}」を 撤去する？`)) { Sim.removeFacility(s, d.remove); render(); } }
-        else if (d.shelf) { if (Sim.addShelf(s, d.shelf)) { say('koori', `${Sim.product(d.shelf).name}の 棚を ふやしたよ！`); render(); } }
+        else if (d.shelf) { if (Sim.addShelf(s, d.shelf)) { say('koori', `${C.shelfTypes[Sim.product(d.shelf).type].name}を 置いて ${Sim.product(d.shelf).name}を ならべたよ！`); render(); } }
         else if (d.unshelf) { const p = Sim.product(d.unshelf); if (confirm(`${p.name}の 棚を 1 台 撤去する？${Sim.shelfUnits(s, p.id) === 1 ? `\n0 台に なると ${p.name}は 売れなく なる` : ''}`)) { Sim.removeShelf(s, p.id); render(); } }
         else if (d.partner) { const st = s.partners[d.partner]; Sim.setPartner(s, d.partner, !st.on); const p = Sim.partner(d.partner); if (st.on && p.art) say(p.art, p.id === 'ad' ? 'まかせろ！！ おかおか じゅうに 店の 名前を さけんで くるぜ！！' : 'よろしく！'); render(); }
         else if (d.repay) { Sim.repay(s, d.repay === 'all' ? s.debt : Number(d.repay)); if (s.debt <= 0) say('onioni', 'ぐぬぬ… ぜんぶ 返しおった…！'); render(); }
@@ -367,6 +380,7 @@
         const t = e.target;
         if (t.dataset.order) { s.orders[t.dataset.order] = Math.max(0, Math.round(Number(t.value) || 0)); t.value = s.orders[t.dataset.order]; updateCost(); }
         else if (t.name === 'markdown') { s.markdown = Number(t.value); renderOrder(Sim.weekInfo(s.week)); }
+        else if (t.id === 'show-locked') { showLocked = t.checked; renderOrder(Sim.weekInfo(s.week)); }
         else if (t.id === 'kids') { s.kids = t.checked; renderOrder(Sim.weekInfo(s.week)); }
         else if (t.dataset.dungeon && t.value) { const dg = C.dungeons.find(x => x.id === t.value); if (Sim.sendDungeon(s, t.dataset.dungeon, t.value)) say(Sim.staffDef(t.dataset.dungeon).art, `${dg.name}に 行って きます！ (${dg.weeks} 週)`); renderStaff(); updateCost(); }
         else if ('dj' in t.dataset) { Sim.bookEvent(s, Number(t.value)); if (s.eventDay >= 0) say('okagappa', `${C.dayNames[s.eventDay]}曜日は まかせとけ！ YO！`); updateCost(); }
@@ -445,7 +459,9 @@
                 <div class="ev">${img('onioni', 36)}<p><b>おにおにバンク</b>: ${bank}${m.forced ? `<br>資金が マイナスだったので ${man(m.forced)} 勝手に 貸した (利息 アップ)` : ''}</p></div>
                 <div class="ev">${img('sasaki', 36)}<p><b>Mr.SASAKI の 査定: ${m.grade}</b> ${gradeText}${m.bonus ? `<br>本部から ボーナス ${man(m.bonus)}！` : ''}</p></div></div>`;
         }
-        $('modal-box').innerHTML = `<h2>今週の まとめ <small>第 ${r.week + 1} 週${r.info.event ? `・${r.info.event.name}` : ''}</small></h2>
+        const banner = (r.firstClear && s.mode === 'endless' ? `<div class="banner">🏆 おかおか 1 達成！ (第 ${r.week + 1} 週) エンドレスは まだ つづく！</div>` : '')
+            + (r.yearEnd ? `<div class="banner">🎉 ${r.yearEnd} 年目 おつかれさま！ ${r.yearEnd + 1} 年目が はじまる</div>` : '');
+        $('modal-box').innerHTML = `<h2>今週の まとめ <small>${s.mode === 'endless' ? `${Sim.yearOf(r.week)} 年目 ` : ''}第 ${r.week % C.weeks + 1} 週${r.info.event ? `・${r.info.event.name}` : ''}</small></h2>${banner}
             <div class="forecast">${days}</div>
             <div class="sum-grid">
                 <div><span>売上</span><b>${man(r.sales)}</b></div>
@@ -511,7 +527,7 @@
     // 画面の 確認用: ?play=kokura (すぐ はじめる)・&tab=staff・&weeks=10 (自動で すすめる)・&report=1・&end=clear|normal|bad・&story=1
     const play = params.get('play');
     if (play) {
-        s = Sim.newGame('こおりマート', Number(params.get('seed') || 5), C.regions.some(r => r.id === play) ? play : 'tsugaku', params.get('diff') || 'normal');
+        s = Sim.newGame('こおりマート', Number(params.get('seed') || 5), C.regions.some(r => r.id === play) ? play : 'tsugaku', params.get('diff') || 'normal', params.get('mode') || 'year');
         const weeks = Number(params.get('weeks') || 0);
         for (let i = 0; i < weeks && !s.over; i++) {
             if (i === 1) { Sim.buyFacility(s, 'fryer'); s.applicants = ['tamu', 'dake']; Sim.hire(s, 'tamu'); Sim.hire(s, 'dake'); }
@@ -522,6 +538,11 @@
             if (i === 3 && params.get('rare')) { s.applicants = [params.get('rare')]; Sim.hire(s, params.get('rare')); if (!s.metRare.includes(params.get('rare'))) s.metRare.push(params.get('rare')); }
             if (i === 4 && params.get('rare')) { s.applicants = ['ueno', 'yukionnan']; }
             lastReport = Sim.runWeek(s);
+        }
+        if (params.get('big')) { // 画面確認: 大きな 店
+            s.storeLv = Number(params.get('big')); s.cash = 5e7;
+            for (const id of ['sandwich', 'sweets', 'dairy', 'cupnoodle', 'frozen', 'magazine', 'newspaper', 'cosme', 'stationery', 'toy', 'onigiri', 'drink']) Sim.addShelf(s, id);
+            for (const id of ['coffee', 'steamer', 'oden', 'toilet', 'copy', 'kids', 'bakery']) Sim.buyFacility(s, id);
         }
         start();
         if (params.get('tab')) document.querySelector(`.tabs button[data-tab="${params.get('tab')}"]`).click();

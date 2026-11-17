@@ -48,7 +48,8 @@ function idle() {}
 // おまかせ: 毎週 目安で 発注・安い 施設から・足りない コマに 人を やとう
 function normal(s) {
     autoOrder(s);
-    for (const f of [...C.facilities].sort((a, b) => a.cost - b.cost)) if (s.cash > Sim.facCost(s, f.id) + 300000) Sim.buyFacility(s, f.id);
+    // 目安プレイは よく ある 施設を 安い 順に (新しい 施設は つかわない)
+    for (const f of C.facilities.filter(x => ['oden', 'wifi', 'fryer', 'coffee', 'atm', 'smoke', 'eatin', 'parking'].includes(x.id)).sort((a, b) => a.cost - b.cost)) if (s.cash > Sim.facCost(s, f.id) + 300000) Sim.buyFacility(s, f.id);
     const need = Sim.estSlots(s);
     staffUp(s, s.cash > 150000 && (s.staff.length < 3 || [0, 1, 2].some(t => Sim.slotCap(s, t) < need[t])));
     assignRoles(s);
@@ -57,14 +58,14 @@ function normal(s) {
 
 // じょうず: 地域に 合う 施設・ダンジョン・限定商品・連携・値段・天気を 見た 発注・はやめの 返済
 const PLAN = {
-    tsugaku: ['fryer', 'wifi', 'fridge', 'eatin'],
+    tsugaku: ['fryer', 'wifi', 'copy', 'eatin'],
     onga: ['parking', 'oden', 'fryer', 'atm'],
     kokura: ['coffee', 'smoke', 'eatin', 'atm']
 };
 function good(s) {
     const r = Sim.regionOf(s);
     // 手もとに のこす お金 = 1 週の 出費 + 月末の 返済 (これを 切る 買い物は しない)
-    const reserve = Sim.wages(s) + r.rent + Sim.upkeep(s) + (s.debt > 0 ? C.bank.pay + s.debt * s.rate : 0) + 100000;
+    const reserve = Sim.wages(s) + Sim.rentOf(s) + Sim.upkeep(s) + (s.debt > 0 ? C.bank.pay + s.debt * s.rate : 0) + 100000;
     const recent = s.history.filter(h => !h.moved).slice(-2);
     const lastP = recent.length ? recent.reduce((a, h) => a + h.profit, 0) / recent.length : 0;
     for (const id of PLAN[r.id]) if (s.cash > Sim.facCost(s, id) + reserve && (lastP > 0 || !s.facilities.length)) Sim.buyFacility(s, id);
@@ -121,10 +122,10 @@ function reckless(s) {
     for (const p of C.products) s.prices[p.id] = Math.round(p.price * 0.7 / 10) * 10;
 }
 
-function play(strategy, seed, region, diff) {
-    const s = Sim.newGame('テスト', seed, region, diff);
+function play(strategy, seed, region, diff, mode, weeks) {
+    const s = Sim.newGame('テスト', seed, region, diff, mode);
     let reports = 0;
-    while (!s.over) { strategy(s); Sim.runWeek(s); reports++; }
+    while (!s.over && !(weeks && s.week >= weeks)) { strategy(s); Sim.runWeek(s); reports++; }
     const rank = Sim.ranking(s).findIndex(x => x.me) + 1;
     return { s, rank, clearWeek: s.over === 'clear' ? s.week : null };
 }

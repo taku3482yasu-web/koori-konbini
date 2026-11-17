@@ -298,3 +298,11 @@ table.work { width: 100%; border-collapse: collapse; font-size: 13px; margin-bot
 .zk small { color: var(--sub); font-size: 11px; line-height: 1.4; }
 .zukan-line { margin: 10px 0 0; color: #ffd75e; font-size: 13px; }
 .shop .btns { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* エンドレス・店の 大きさ・棚の 種類 (2026-11-17) */
+.panel h4 { margin: 12px 0 6px; font-size: 14px; }
+.panel h4 small { display: block; font-weight: 500; color: var(--sub); font-size: 12px; margin-top: 2px; }
+tr.cat th { text-align: left; padding: 10px 4px 4px; color: var(--gold); font-size: 13px; border-top: none; }
+.banner { background: linear-gradient(90deg, #5a3a00, #3a1f5a); border: 2px solid var(--gold); border-radius: 12px; padding: 10px 14px; margin: 8px 0; font-weight: 800; }
+.order-head > span:last-child { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.order-head .chip input { display: none; }

@@ -11,6 +11,11 @@
         slotNames: ['朝', '昼', '夜'],
 
         start: { cash: 400000, rep: 40, regulars: 0 },
+        // モード (2026-11-17 ユーザー指定: エンドレスモード = ずっと 経営できる)
+        modes: {
+            year: { name: '1年 モード', text: '1 年 (52 週) で おかおか 1 を めざす。企画書の ルール' },
+            endless: { name: 'エンドレス', text: 'ずっと 経営できる。1 位に なっても つづく。店を 大きく して いこう' }
+        },
         // 難易度 (2026-11-17 ユーザー指定: 難易度を えらべる ように) ★ 数値は Claude
         // rival = ライバル店の 売上の 倍率、cash = はじめの 手持ち、rate = おにおにバンクの 利息 (月)、traffic = 客の 倍率
         difficulties: {
@@ -69,21 +74,52 @@
             driver: { name: 'ドライバー', icon: '🚚', sense: 1.2, slot: [0.3, 0.25, 0.45], rate: { onigiri: 0.45, bento: 0.35, bread: 0.15, drink: 0.7, snack: 0.15, daily: 0.1, ice: 0.05, coffee: 0.4, hotsnack: 0.3, oden: 0.1 } }
         },
 
-        // ----- 商品 (企画書: 値段は 自分で きめる・消費期限で 値下げ) -----
-        // price = ふつうの 値段、shelf = 何日で 期限切れか (0 = 日持ちする)、cap = 売り場の 棚に ならべられる 数 (のこりは 倉庫)、
-        // cook = 調理の 持ち場が 作って ケースへ (うでで 売れかたも かわる)、self = コーヒーマシン (倉庫の 豆から その場で いれる。品出し いらない)
+        // ----- 商品 (企画書: 値段は 自分で きめる・消費期限で 値下げ。2026-11-17 ユーザー指定: コンビニに ある ものを だいたい ぜんぶ) -----
+        // price = ふつうの 値段、shelf = 何日で 期限切れか (0 = 日持ちする)、cap = 棚 1 台に ならべられる 数 (のこりは 倉庫)、
+        // type = 置ける 棚の 種類 (shelfTypes)、cat = 発注の ページの まとまり、rates = 1 人が 買う 数 [学生, サラリーマン, 家族連れ, ドライバー]
+        // cook = 調理の 持ち場が 作って ケースへ (棚 いらない)、self = コーヒーマシン (倉庫の 豆から その場で いれる。棚 いらない)
+        // はじめから ある 10 品の rates は segments に ある。あとから ふえた 商品の 数値は ★ Claude
         products: [
-            { id: 'onigiri', name: 'おにぎり', icon: '🍙', price: 150, cost: 95, shelf: 2, cap: 120 },
-            { id: 'bento', name: 'お弁当', icon: '🍱', price: 520, cost: 360, shelf: 2, cap: 70 },
-            { id: 'bread', name: 'パン', icon: '🥐', price: 170, cost: 110, shelf: 3, cap: 90 },
-            { id: 'drink', name: 'ドリンク', icon: '🥤', price: 150, cost: 85, shelf: 0, cap: 150, temp: [0.7, 0.017] },
-            { id: 'snack', name: 'お菓子', icon: '🍫', price: 150, cost: 95, shelf: 0, cap: 160 },
-            { id: 'daily', name: '日用品・雑誌', icon: '🧴', price: 350, cost: 250, shelf: 0, cap: 90 },
-            { id: 'ice', name: 'アイス', icon: '🍦', price: 180, cost: 105, shelf: 0, cap: 90, iceCurve: true },
-            { id: 'coffee', name: 'いれたてコーヒー', icon: '☕', price: 150, cost: 45, shelf: 0, cap: 9999, self: true, needs: 'coffee' },
-            { id: 'hotsnack', name: 'ホットスナック', icon: '🍗', price: 220, cost: 95, shelf: 1, cap: 60, temp: [1.2, -0.012], needs: 'fryer', cook: true },
-            { id: 'oden', name: 'おでん', icon: '🍢', price: 130, cost: 60, shelf: 1, cap: 80, odenCurve: true, needs: 'oden', cook: true }
+            { id: 'onigiri', name: 'おにぎり', icon: '🍙', price: 150, cost: 95, shelf: 2, cap: 120, type: 'chilled', cat: 'food' },
+            { id: 'bento', name: 'お弁当', icon: '🍱', price: 520, cost: 360, shelf: 2, cap: 70, type: 'chilled', cat: 'food' },
+            { id: 'sandwich', name: 'サンドイッチ', icon: '🥪', price: 320, cost: 210, shelf: 2, cap: 60, type: 'chilled', cat: 'food', rates: [0.08, 0.14, 0.07, 0.1] },
+            { id: 'noodle', name: '調理めん・パスタ', icon: '🍝', price: 480, cost: 320, shelf: 2, cap: 40, type: 'chilled', cat: 'food', rates: [0.05, 0.1, 0.05, 0.1], temp: [0.6, 0.018] },
+            { id: 'sozai', name: 'お惣菜', icon: '🥘', price: 320, cost: 200, shelf: 2, cap: 50, type: 'chilled', cat: 'food', rates: [0.02, 0.07, 0.12, 0.05] },
+            { id: 'salad', name: 'サラダ', icon: '🥗', price: 300, cost: 190, shelf: 2, cap: 40, type: 'chilled', cat: 'food', rates: [0.02, 0.09, 0.07, 0.03] },
+            { id: 'sweets', name: 'スイーツ', icon: '🍰', price: 280, cost: 175, shelf: 3, cap: 60, type: 'chilled', cat: 'food', rates: [0.12, 0.07, 0.13, 0.04] },
+            { id: 'dairy', name: '牛乳・ヨーグルト', icon: '🥛', price: 170, cost: 110, shelf: 5, cap: 80, type: 'chilled', cat: 'food', rates: [0.06, 0.07, 0.14, 0.04] },
+            { id: 'bread', name: 'パン', icon: '🥐', price: 170, cost: 110, shelf: 3, cap: 90, type: 'ambient', cat: 'food' },
+            { id: 'cupnoodle', name: 'カップめん', icon: '🍜', price: 220, cost: 145, shelf: 0, cap: 120, type: 'ambient', cat: 'food', rates: [0.1, 0.07, 0.07, 0.13], temp: [1.3, -0.016] },
+            { id: 'grocery', name: '食品・調味料', icon: '🥫', price: 260, cost: 180, shelf: 0, cap: 80, type: 'ambient', cat: 'food', rates: [0.01, 0.03, 0.11, 0.02] },
+            { id: 'snack', name: 'お菓子', icon: '🍫', price: 150, cost: 95, shelf: 0, cap: 160, type: 'ambient', cat: 'food' },
+            { id: 'drink', name: 'ドリンク', icon: '🥤', price: 150, cost: 85, shelf: 0, cap: 150, temp: [0.7, 0.017], type: 'drinkcase', cat: 'drink' },
+            { id: 'ice', name: 'アイス', icon: '🍦', price: 180, cost: 105, shelf: 0, cap: 90, iceCurve: true, type: 'freezer', cat: 'drink' },
+            { id: 'frozen', name: '冷凍食品', icon: '🧊', price: 360, cost: 235, shelf: 0, cap: 70, type: 'freezer', cat: 'drink', rates: [0.02, 0.05, 0.11, 0.03] },
+            { id: 'daily', name: '日用品', icon: '🧴', price: 350, cost: 250, shelf: 0, cap: 90, type: 'goods', cat: 'goods' },
+            { id: 'stationery', name: '文房具', icon: '✏️', price: 220, cost: 135, shelf: 0, cap: 80, type: 'goods', cat: 'goods', rates: [0.07, 0.02, 0.04, 0.01] },
+            { id: 'clothing', name: '衣料品 (くつ下・下着)', icon: '🧦', price: 850, cost: 520, shelf: 0, cap: 40, type: 'goods', cat: 'goods', rates: [0.01, 0.03, 0.025, 0.04] },
+            { id: 'cosme', name: '化粧品', icon: '💄', price: 750, cost: 470, shelf: 0, cap: 40, type: 'goods', cat: 'goods', rates: [0.035, 0.02, 0.045, 0.01] },
+            { id: 'gadget', name: '電池・スマホ用品', icon: '🔋', price: 950, cost: 660, shelf: 0, cap: 40, type: 'goods', cat: 'goods', rates: [0.025, 0.03, 0.02, 0.04] },
+            { id: 'toy', name: 'おもちゃ・くじ', icon: '🧸', price: 750, cost: 470, shelf: 0, cap: 40, type: 'goods', cat: 'goods', rates: [0.05, 0.01, 0.05, 0.01] },
+            { id: 'giftcard', name: 'ギフトカード', icon: '💳', price: 2000, cost: 1880, shelf: 0, cap: 30, type: 'goods', cat: 'goods', rates: [0.025, 0.02, 0.025, 0.01] },
+            { id: 'magazine', name: '雑誌・まんが', icon: '📚', price: 560, cost: 430, shelf: 7, cap: 50, type: 'rack', cat: 'goods', rates: [0.05, 0.05, 0.04, 0.06] },
+            { id: 'newspaper', name: '新聞', icon: '📰', price: 160, cost: 120, shelf: 1, cap: 60, type: 'rack', cat: 'goods', rates: [0, 0.08, 0.02, 0.06] },
+            { id: 'coffee', name: 'いれたてコーヒー', icon: '☕', price: 150, cost: 45, shelf: 0, cap: 9999, self: true, needs: 'coffee', cat: 'counter' },
+            { id: 'hotsnack', name: 'ホットスナック', icon: '🍗', price: 220, cost: 95, shelf: 1, cap: 60, temp: [1.2, -0.012], needs: 'fryer', cook: true, cat: 'counter' },
+            { id: 'oden', name: 'おでん', icon: '🍢', price: 130, cost: 60, shelf: 1, cap: 80, odenCurve: true, needs: 'oden', cook: true, cat: 'counter' },
+            { id: 'nikuman', name: '中華まん', icon: '🥟', price: 160, cost: 65, shelf: 1, cap: 60, odenCurve: true, needs: 'steamer', cook: true, cat: 'counter', rates: [0.12, 0.08, 0.08, 0.12] }
         ],
+        // 発注の ページの まとまり
+        cats: { food: '食べもの', drink: 'ドリンク・アイス・冷凍', goods: '雑貨・本', counter: 'レジまわり (施設で 売る)' },
+        // 棚の 種類 (2026-11-17 ユーザー指定: アイスしか 置けない 棚・飲みもの用の 棚 など)。cost = 1 台、upkeep = 1 台の 毎週の 電気代 ★
+        shelfTypes: {
+            chilled: { name: 'チルドケース', icon: '🧊', cost: 250000, upkeep: 4000, text: '冷蔵。おにぎり・お弁当・サンドイッチ・スイーツ など' },
+            drinkcase: { name: '飲料ケース', icon: '🥤', cost: 200000, upkeep: 3000, text: '冷えた ドリンク 専用' },
+            freezer: { name: '冷凍ケース', icon: '❄️', cost: 250000, upkeep: 4000, text: 'アイスと 冷凍食品 専用' },
+            ambient: { name: '常温棚', icon: '🗄', cost: 80000, upkeep: 0, text: 'パン・お菓子・カップめん・食品' },
+            goods: { name: '雑貨棚', icon: '🛍', cost: 100000, upkeep: 0, text: '日用品・文房具・衣料品・化粧品・電池・おもちゃ・ギフトカード' },
+            rack: { name: '雑誌・新聞ラック', icon: '📰', cost: 30000, upkeep: 0, text: '雑誌・まんが・新聞' }
+        },
         priceStep: 10,
         priceRange: [0.6, 1.6],    // 値段を つけられる はば (ふつうの 何倍)
         cheapLine: 0.88,           // ★ これより 安いと「安っ！」・平均が これより 安いと「安いだけの 店」
@@ -109,11 +145,17 @@
         localPerWeek: 0.5,         // ★ 地域から 毎週 とどく 特産品 (0.5 = 2 週に 1 つ)
 
         // ----- 便利施設 (企画書: 店の 広さに 限り・施設ごとに 集まる 客が ちがう) -----
-        // 店の 床 (2026-11-17 ユーザー指定: 棚や 施設の 撤去)。棚 1 台と 施設 1 つで 1 マス ずつ。はじめは 棚 8 台で のこり 4 マス ★
-        floor: 12,
-        maxFacilities: 6,          // 施設は 6 つ まで (見下ろしの 絵に おける 数)
-        shelf: { cost: 80000, refund: 0.3 }, // 棚を 1 台 ふやす / 撤去すると もどる 割合 ★
-        startShelves: { onigiri: 1, bento: 1, bread: 1, drink: 2, snack: 1, daily: 1, ice: 1 }, // 商品の cap は 棚 1 台ぶん
+        // 店の 床 (2026-11-17 ユーザー指定: 棚や 施設の 撤去)。棚 1 台と 施設 1 つで 1 マス ずつ。広さは 店の 大きさ (storeLevels) で きまる
+        shelf: { refund: 0.3 },    // 棚を 撤去すると もどる 割合 ★ (1 台の 値段は shelfTypes)
+        startShelves: { onigiri: 1, bento: 1, bread: 1, drink: 2, snack: 1, daily: 1, ice: 1 }, // はじめの 棚 (商品の cap は 棚 1 台ぶん)
+        // 店の 大きさ (2026-11-17 ユーザー指定: コンビニ自体を 大きく できる。お金と 評判が 一定 以上 いる) ★ 数値は Claude
+        // floor = 床の マス、maxFac = 置ける 施設、traffic = 客の 倍率、rentAdd = 家賃に 足す 額 (週)
+        storeLevels: [
+            { name: '小さな 店', floor: 12, maxFac: 6, traffic: 1, rentAdd: 0 },
+            { name: 'ふつうの 店', floor: 18, maxFac: 8, traffic: 1.1, rentAdd: 30000, cost: 3000000, rep: 60 },
+            { name: '大きな 店', floor: 26, maxFac: 10, traffic: 1.22, rentAdd: 70000, cost: 8000000, rep: 75 },
+            { name: 'おかおか 旗艦店', floor: 36, maxFac: 12, traffic: 1.38, rentAdd: 150000, cost: 20000000, rep: 88 }
+        ],
         facilities: [
             { id: 'eatin', name: 'イートインルーム', icon: '🪑', cost: 800000, upkeep: 15000, seg: { student: 1.25, worker: 1.1 }, capMul: 0.9, text: '学生・ひとり飯が 来る', warn: '長居で レジの 回転が 落ちる' },
             { id: 'smoke', name: 'たばこ室', icon: '🚬', cost: 600000, upkeep: 8000, seg: { worker: 1.2, driver: 1.3, family: 0.8 }, text: 'サラリーマン・トラック運転手が 来る', warn: '家族連れが へる' },
@@ -122,12 +164,20 @@
             { id: 'coffee', name: 'コーヒーマシン', icon: '☕', cost: 500000, upkeep: 12000, text: 'いれたてコーヒーを 売れる (もうけが 大きい)' },
             { id: 'fryer', name: 'ホットスナック什器', icon: '🍗', cost: 400000, upkeep: 10000, text: 'からあげ・コロッケを 売れる (寒いほど 売れる)' },
             { id: 'oden', name: 'おでん鍋', icon: '🍢', cost: 150000, upkeep: 5000, text: 'おでんを 売れる (秋〜冬の 主役)' },
+            { id: 'steamer', name: '中華まんスチーマー', icon: '🥟', cost: 200000, upkeep: 5000, text: '中華まんを 売れる (寒いほど 売れる)' },
             { id: 'atm', name: 'ATM', icon: '🏧', cost: 600000, upkeep: 6000, seg: { student: 1.06, worker: 1.06, family: 1.06, driver: 1.06 }, text: 'どの 客も 少し ふえる' },
-            { id: 'fridge', name: '大型冷蔵ケース', icon: '🧊', cost: 400000, upkeep: 9000, boost: { drink: 1.1, ice: 1.15 }, capMul: { drink: 1.5, ice: 1.5 }, text: 'ドリンク・アイスが 売れる・棚 1.5 倍' }
+            // 2026-11-17 ユーザー指定で 追加 ★
+            { id: 'copy', name: 'マルチコピー機', icon: '🖨', cost: 400000, upkeep: 5000, seg: { student: 1.08, worker: 1.05, family: 1.03 }, boost: { stationery: 1.2 }, text: 'コピー・チケット・公共料金の 支払い。学生が 来る' },
+            { id: 'locker', name: '宅配ロッカー', icon: '📦', cost: 300000, upkeep: 3000, seg: { worker: 1.06, family: 1.05 }, text: '荷物を 受け取りに 来た ついでに 買う' },
+            { id: 'toilet', name: 'きれいな トイレ', icon: '🚻', cost: 500000, upkeep: 4000, seg: { family: 1.05, driver: 1.08 }, rep: 4, text: '評判 アップ。車の 客と 家族連れが よろこぶ' },
+            { id: 'bakery', name: '店内ベーカリー', icon: '🍞', cost: 1200000, upkeep: 15000, boost: { bread: 1.4, sweets: 1.15, sandwich: 1.15 }, text: '焼きたて パンの においで パン・スイーツ・サンドイッチが 売れる' },
+            { id: 'ev', name: 'EV 充電器', icon: '🔌', cost: 800000, upkeep: 6000, seg: { driver: 1.15, family: 1.06 }, text: '電気自動車の 客が 充電の あいだに 買う' },
+            { id: 'kids', name: 'キッズコーナー', icon: '🧒', cost: 500000, upkeep: 4000, seg: { family: 1.15 }, boost: { toy: 1.3, sweets: 1.1 }, text: '家族連れが 来る。おもちゃ・くじが 売れる' },
+            { id: 'ticket', name: 'チケット端末', icon: '🎫', cost: 300000, upkeep: 3000, seg: { student: 1.05, worker: 1.04 }, boost: { giftcard: 1.4 }, text: 'ライブや 映画の チケット。ギフトカードも 売れる' }
         ],
         sellBack: 0.3,             // ★ 施設を はずすと 戻る お金
         // upkeep = 毎週の 設備代 (リース・電気代・手入れ。2026-11-17 ユーザー指定: 設備代も はらう) ★ 金額は Claude
-        baseUpkeep: 30000,         // ★ 店の 基本の 設備 (レジ・冷蔵の 棚・照明) の 電気代・リース
+        baseUpkeep: 12000,         // ★ 店の 基本の 設備 (レジ・照明) の 電気代・リース。棚の 電気代は shelfTypes の upkeep
 
         // ----- スタッフ (企画書: シリーズの キャラ・接客/品出し/調理/ダンジョンの 得意不得意・シフト・給料と やる気) ★ -----
         // st = [接客, 品出し, 検品, 調理, 探索] (1〜5)。pay = 時給 (2026-11-17 ユーザー: アルバイトを 募集・給料を 払う)。
@@ -195,7 +245,14 @@
             { id: 'farm', name: 'おかおか農場', boss: '★ 未定', art: null, fee: 30000, local: 2, text: '特産品 +2 / 週' },
             { id: 'field', name: 'はたけ', boss: '★ 未定', art: null, fee: 15000, local: 1, text: '特産品 +1 / 週' },
             { id: 'ad', name: 'ひびき広告', boss: 'ひびきまくり (声が でかい)', art: 'hibikimakuri', fee: 50000, traffic: 1.1, text: '来店 +10%' },
-            { id: 'event', name: 'DJ かっぱ イベント', boss: 'おかがっぱ (DJ)', art: 'okagappa', fee: 120000, perUse: true, day: 2.2, text: 'えらんだ 1 日だけ 大混雑 (客 2.2 倍)' }
+            { id: 'event', name: 'DJ かっぱ イベント', boss: 'おかがっぱ (DJ)', art: 'okagappa', fee: 120000, perUse: true, day: 2.2, text: 'えらんだ 1 日だけ 大混雑 (客 2.2 倍)' },
+            // 2026-11-17 ユーザー指定で 追加 (社長は シリーズの キャラ。会社と 効果は ★ Claude)
+            { id: 'fishery', name: '浦の島 漁協', boss: '浦の島重蔵', art: 'urashima', fee: 30000, mats: { umi: 1 }, text: '海の さち +1 / 週 (海鮮弁当の 材料)' },
+            { id: 'logistics', name: 'ノゾエマ 筋肉運輸', boss: 'ノゾエマ', art: 'nozoema', fee: 50000, check: 1.3, text: '検品が 30% はやく なる (荷物を きれいに 積んで くる)' },
+            { id: 'delivery', name: 'ズミタニ 忍者便', boss: 'ズミタニ', art: 'zumitani', fee: 50000, stock: 1.25, text: '品出しが 25% はやく なる (夜の うちに 棚の 近くまで 運ぶ)' },
+            { id: 'cleaning', name: 'ハリー 清掃', boss: 'ハリー', art: 'harry', fee: 30000, rep: 1.5, text: '評判 +1.5 / 週 (店が ピカピカ)' },
+            { id: 'staffing', name: 'ネット寺 人材派遣', boss: 'ダイシ', art: 'daishi', fee: 90000, temp: 50, text: 'レジに 応援が 来る (1 コマ +50 人 さばける)' },
+            { id: 'gacha', name: 'ガチャポン 商会', boss: 'ガチャポン', art: 'gachapon', fee: 30000, boost: { toy: 1.4, snack: 1.05 }, seg: { student: 1.03 }, text: 'おもちゃ・くじ +40%・学生が 少し ふえる' }
         ],
         trustFee: 0.02, trustPower: 0.01, trustMax: 15, // ★ 信頼度 1 ごとに 料金 −2%・効果 +1% (15 まで)
         steal: 0.03, stealWeeks: 8, // ★ ライバルに とられる 確率 / 週・とられる 週
@@ -217,7 +274,7 @@
 
         // ----- 季節と 行事 (企画書: 夏祭り・受験シーズン・年末年始 など) ★ -----
         events: [
-            { week: 0, name: '新生活', traffic: 1.08, boost: { daily: 1.5 } },
+            { week: 0, name: '新生活', traffic: 1.08, boost: { daily: 1.5, stationery: 1.4, clothing: 1.3 } },
             { week: 4, name: 'おかおか どんたく', traffic: 1.35, text: 'まちじゅう お祭り。ドリンクと おにぎりが 売れる', boost: { drink: 1.3, onigiri: 1.2 } },
             { week: 13, name: '山かさ', traffic: 1.2, text: '朝早くから 人が 集まる。お弁当・おにぎりが 売れる', boost: { bento: 1.2, onigiri: 1.2 } },
             { week: 14, name: '山かさ (追い山)', traffic: 1.25, boost: { bento: 1.2, onigiri: 1.3, drink: 1.2 } },
@@ -225,12 +282,12 @@
             { week: 18, name: '夏祭り・花火大会', traffic: 1.35, text: '夜の 客が どっと くる。ドリンク・アイス 大人気', boost: { drink: 1.4, ice: 1.4, hotsnack: 1.2 } },
             { week: 19, name: 'お盆', traffic: 0.92, text: '帰省で まちの 人が へる' },
             { week: 23, name: 'ほうじょうや (秋祭り)', traffic: 1.2, boost: { drink: 1.2, snack: 1.2 } },
-            { week: 38, name: 'クリスマス', traffic: 1.12, text: 'チキンが いちばん 売れる 週', boost: { hotsnack: 1.8, snack: 1.2 } },
-            { week: 39, name: '年末年始', traffic: 1.1, boost: { daily: 1.3, oden: 1.2 } },
-            { week: 41, name: '受験シーズン', traffic: 1.0, seg: { student: 1.25 }, text: '学生が 夜おそくまで 勉強。ごうかく祈願の お菓子が 売れる', boost: { snack: 1.3, coffee: 1.2 } },
+            { week: 38, name: 'クリスマス', traffic: 1.12, text: 'チキンと ケーキが いちばん 売れる 週', boost: { hotsnack: 1.8, snack: 1.2, sweets: 1.8, toy: 1.6, giftcard: 1.5 } },
+            { week: 39, name: '年末年始', traffic: 1.1, boost: { daily: 1.3, oden: 1.2, grocery: 1.4, giftcard: 1.4, newspaper: 1.5 } },
+            { week: 41, name: '受験シーズン', traffic: 1.0, seg: { student: 1.25 }, text: '学生が 夜おそくまで 勉強。ごうかく祈願の お菓子が 売れる', boost: { snack: 1.3, coffee: 1.2, stationery: 1.5 } },
             { week: 42, name: '受験シーズン', traffic: 1.0, seg: { student: 1.2 }, boost: { snack: 1.25, coffee: 1.2 } },
-            { week: 45, name: 'バレンタイン', traffic: 1.05, boost: { snack: 1.5 } },
-            { week: 50, name: '卒業・引っ越し', traffic: 1.05, boost: { daily: 1.3 } }
+            { week: 45, name: 'バレンタイン', traffic: 1.05, boost: { snack: 1.5, sweets: 1.4 } },
+            { week: 50, name: '卒業・引っ越し', traffic: 1.05, boost: { daily: 1.3, stationery: 1.2, gadget: 1.2 } }
         ],
 
         // ----- キャラの できごと (企画書の キャラの 役割から) ★ -----
@@ -255,6 +312,9 @@
             { name: 'ペコリスストア', owner: 'pekorisu', boss: 'ペコリス', weekly: 850000, grow: 0.1, rep: 50, line: 'ぺこり。よろしく おねがいします' }
         ]
     };
+    // あとから ふえた 商品の rates [学生, サラリーマン, 家族連れ, ドライバー] を 客層の rate に 入れる
+    const segIds = ['student', 'worker', 'family', 'driver'];
+    for (const p of CONFIG.products) if (p.rates) segIds.forEach((g, i) => { CONFIG.segments[g].rate[p.id] = p.rates[i]; });
     if (typeof module !== 'undefined') module.exports = CONFIG;
     else root.CONFIG = CONFIG;
 })(this);

@@ -22,28 +22,30 @@
 
     // ----- こよみ -----
     function dateOf(day) {
+        day = ((day % (C.weeks * 7)) + C.weeks * 7) % (C.weeks * 7); // エンドレスでは 52 週で くり返す
         let m = 0;
         while (day >= C.monthDays[m]) { day -= C.monthDays[m]; m = (m + 1) % 12; }
         return { mi: m, month: ((m + C.startMonth - 1) % 12) + 1, date: day + 1 };
     }
     function weekInfo(week) {
         const a = dateOf(week * 7), b = dateOf(week * 7 + 6);
-        return { start: a, end: b, mi: dateOf(week * 7 + 3).mi, event: C.events.find(e => e.week === week) || null };
+        return { start: a, end: b, mi: dateOf(week * 7 + 3).mi, event: C.events.find(e => e.week === week % C.weeks) || null };
     }
     // この 週で 月が おわるか (つぎの 週の はじめが ちがう 月)
-    const monthEnds = week => week + 1 >= C.weeks || weekInfo(week + 1).start.month !== weekInfo(week).start.month;
+    const monthEnds = week => weekInfo(week + 1).start.month !== weekInfo(week).start.month;
+    const yearOf = week => Math.floor(week / C.weeks) + 1;
 
     // 持ち場の はじめは いちばん 得意な ところ
     function bestRole(id) { const st = staffDef(id).st; return Object.keys(C.roles).sort((a, b) => st[C.roles[b].stat] - st[C.roles[a].stat])[0]; }
     function newMember(id) { return { id, slots: [1, 1, 0], role: bestRole(id), job: 'shop', dungeon: null, back: 0, mood: C.mood.start, tired: false }; }
 
     const diffOf = s => C.difficulties[s.difficulty] || C.difficulties.normal;
-    function newGame(name, seed, region, difficulty) {
+    function newGame(name, seed, region, difficulty, mode) {
         const df = C.difficulties[difficulty] || C.difficulties.normal;
         const s = {
             version: 2, name: name || 'こおりマート', seed: seed >>> 0, rs: seed | 0,
             region: region || C.regions[0].id, week: 0, months: 0,
-            difficulty: C.difficulties[difficulty] ? difficulty : 'normal',
+            difficulty: C.difficulties[difficulty] ? difficulty : 'normal', mode: mode === 'endless' ? 'endless' : 'year', storeLv: 0, matAcc: {}, clearedWeek: null,
             cash: df.cash, debt: C.bank.debt, rate: df.rate, borrowed: 0, occupy: 0,
             rep: C.start.rep, regulars: C.start.regulars,
             prices: {}, orders: {}, stock: {}, ware: {}, back: {}, wareLv: 0, markdown: 0, kids: false,
@@ -98,7 +100,8 @@
     }
     function slotCap(s, t) {
         const eat = s.facilities.reduce((a, f) => a * (typeof facility(f).capMul === 'number' ? facility(f).capMul : 1), 1);
-        return Math.round(inShop(s).filter(m => m.slots[t]).reduce((a, m) => a + stats(s, m)[0] * (m.role === 'register' ? 1 : C.roleHelp), 0) * C.serve * eat);
+        const temp = C.partners.reduce((a, p) => a + (p.temp && partnerPower(s, p.id) ? p.temp * partnerPower(s, p.id) : 0), 0);
+        return Math.round(inShop(s).filter(m => m.slots[t]).reduce((a, m) => a + stats(s, m)[0] * (m.role === 'register' ? 1 : C.roleHelp), 0) * C.serve * eat + temp);
     }
     // コマ t の 持ち場の 仕事量 (画面の 見こみ用)
     function rolePower(s, t, role) {
@@ -138,6 +141,7 @@
         if (event && event.boost && event.boost[p.id]) f *= event.boost[p.id];
         for (const id of s.facilities) { const fc = facility(id); if (fc.boost && fc.boost[p.id]) f *= fc.boost[p.id]; }
         f *= regionOf(s).pref[p.id] || 1;
+        for (const pt of C.partners) if (pt.boost && pt.boost[p.id] && partnerPower(s, pt.id)) f *= 1 + (pt.boost[p.id] - 1) * partnerPower(s, pt.id);
         // レアスタッフの 得意 (店に いる とき)
         for (const m of s.staff) { const r = staffDef(m.id).rare; if (r && r.perk[p.id] && m.job === 'shop' && m.slots.some(Boolean)) f *= r.perk[p.id]; }
         f *= s.facilities.reduce((a, id) => a * (facility(id).spend || 1), 1);
@@ -150,12 +154,13 @@
         const total = SEGS.reduce((a, g) => a + r.base[g], 0);
         for (const g of SEGS) {
             const ev = info.event && info.event.seg && info.event.seg[g] || 1;
-            out[g] = (r.base[g] * segFac(s, g) * ev + s.regulars * C.regulars.visit * r.base[g] / total) * mult;
+            const pseg = C.partners.reduce((a, p) => a * (p.seg && p.seg[g] && partnerPower(s, p.id) ? 1 + (p.seg[g] - 1) * partnerPower(s, p.id) : 1), 1);
+            out[g] = (r.base[g] * segFac(s, g) * ev * pseg + s.regulars * C.regulars.visit * r.base[g] / total) * mult;
         }
         return out;
     }
     function baseMult(s, info) {
-        return C.seasonTraffic[info.mi] * (info.event ? info.event.traffic : 1) * repF(s.rep) * diffOf(s).traffic
+        return C.seasonTraffic[info.mi] * (info.event ? info.event.traffic : 1) * repF(s.rep) * diffOf(s).traffic * levelOf(s).traffic
             * (s.effects.maneki ? C.items.maneki.traffic : 1)
             * (partnerPower(s, 'ad') ? 1 + (partner('ad').traffic - 1) * partnerPower(s, 'ad') : 1)
             * (s.occupy ? C.bank.occupyTraffic : 1);
@@ -219,7 +224,7 @@
     // ----- 操作 (画面から よぶ。できないと false) -----
     function facCost(s, id) { return Math.round(facility(id).cost * (id === 'parking' ? regionOf(s).parkingMul : 1)); }
     function buyFacility(s, id) {
-        if (hasFac(s, id) || s.facilities.length >= C.maxFacilities || floorUsed(s) >= C.floor || s.cash < facCost(s, id)) return false;
+        if (hasFac(s, id) || s.facilities.length >= facCap(s) || floorUsed(s) >= floorCap(s) || s.cash < facCost(s, id)) return false;
         const c = facCost(s, id);
         s.cash -= c;
         s.paid[id] = c;
@@ -239,8 +244,9 @@
     // 棚を ふやす・撤去する (2026-11-17 ユーザー指定)。撤去すると 棚の 商品は 倉庫に もどる
     function addShelf(s, id) {
         const p = product(id);
-        if (!p || !needsShelf(p) || floorUsed(s) >= C.floor || s.cash < C.shelf.cost) return false;
-        s.cash -= C.shelf.cost;
+        const ty = p && C.shelfTypes[p.type];
+        if (!p || !needsShelf(p) || floorUsed(s) >= floorCap(s) || s.cash < ty.cost) return false;
+        s.cash -= ty.cost;
         s.shelves[id] = shelfUnits(s, id) + 1;
         return true;
     }
@@ -248,13 +254,48 @@
         const p = product(id);
         if (!p || shelfUnits(s, id) <= 0) return false;
         s.shelves[id]--;
-        s.cash += Math.round(C.shelf.cost * C.shelf.refund);
+        s.cash += Math.round(C.shelfTypes[p.type].cost * C.shelf.refund);
         const cap = capOf(s, p);
         let over = s.stock[id].reduce((a, b) => a + b.q, 0) - cap;
         for (const b of [...s.stock[id]].reverse()) { if (over <= 0) break; const t = Math.min(b.q, over); b.q -= t; over -= t; s.ware[id].push({ q: t, age: b.age }); }
         s.stock[id] = s.stock[id].filter(b => b.q > 0);
         if (!s.shelves[id]) s.orders[id] = 0;
         return true;
+    }
+    // 店の 大きさ (2026-11-17 ユーザー指定: お金と 評判が 一定 以上 いる)
+    const levelOf = s => C.storeLevels[s.storeLv || 0];
+    const floorCap = s => levelOf(s).floor;
+    const facCap = s => levelOf(s).maxFac;
+    const rentOf = s => regionOf(s).rent + levelOf(s).rentAdd;
+    function canExpand(s) {
+        const nx = C.storeLevels[(s.storeLv || 0) + 1];
+        if (!nx) return { ok: false, max: true };
+        return { ok: s.cash >= nx.cost && s.rep >= nx.rep, next: nx, cash: s.cash >= nx.cost, rep: s.rep >= nx.rep };
+    }
+    function expandStore(s) {
+        const c = canExpand(s);
+        if (!c.ok) return false;
+        s.cash -= c.next.cost;
+        s.storeLv = (s.storeLv || 0) + 1;
+        return true;
+    }
+    // 古い セーブを 今の 形に そろえる
+    function migrate(s) {
+        for (const p of C.products) {
+            for (const k of ['stock', 'ware', 'back']) if (!s[k][p.id]) s[k][p.id] = [];
+            if (s.prices[p.id] === undefined) s.prices[p.id] = p.price;
+            if (s.orders[p.id] === undefined) s.orders[p.id] = 0;
+        }
+        if (!s.shelves) s.shelves = { ...C.startShelves };
+        if (s.storeLv === undefined) s.storeLv = 0;
+        if (!s.mode) s.mode = 'year';
+        if (!s.matAcc) s.matAcc = {};
+        if (s.clearedWeek === undefined) s.clearedWeek = null;
+        if (!s.everHired) s.everHired = C.startStaff.slice();
+        if (!s.metRare) s.metRare = [];
+        for (const p of C.partners) if (!s.partners[p.id]) s.partners[p.id] = { on: false, trust: 0, taken: 0 };
+        s.facilities = s.facilities.filter(id => facility(id));
+        return s;
     }
     // 季節の レアスタッフ: いま (月) やとえるか
     const rareNow = (d, month) => !!d.rare && d.rare.months.includes(month);
@@ -278,7 +319,8 @@
         return true;
     }
     // 設備代 (毎週)
-    const upkeep = s => C.baseUpkeep + C.warehouse.upkeep * s.wareLv + s.facilities.reduce((a, id) => a + upkeepOf(s, id), 0);
+    const shelfUpkeep = s => C.products.reduce((a, p) => a + (needsShelf(p) ? shelfUnits(s, p.id) * C.shelfTypes[p.type].upkeep : 0), 0);
+    const upkeep = s => C.baseUpkeep + C.warehouse.upkeep * s.wareLv + shelfUpkeep(s) + s.facilities.reduce((a, id) => a + upkeepOf(s, id), 0);
     const upkeepOf = (s, id) => Math.round(facility(id).upkeep * (id === 'parking' ? regionOf(s).parkingMul : 1));
     function fire(s, id) {
         const m = s.staff.find(x => x.id === id);
@@ -401,8 +443,9 @@
         // 持ち場の 人は 100%、ほかの 持ち場の 人も roleHelp だけ 手伝う
         const power = (t, role) => inShop(s).filter(m => m.slots[t]).reduce((a, m) => a + stats(s, m)[C.roles[role].stat] * (m.role === role ? 1 : C.roleHelp), 0);
         const caps = [0, 1, 2].map(t => slotCap(s, t));
-        const stockP = [0, 1, 2].map(t => power(t, 'stock') * C.stockPer);
-        const checkP = [0, 1, 2].map(t => power(t, 'check') * C.checkPer);
+        const pMul = k => C.partners.reduce((a, p) => a * (p[k] && partnerPower(s, p.id) ? 1 + (p[k] - 1) * partnerPower(s, p.id) : 1), 1);
+        const stockP = [0, 1, 2].map(t => power(t, 'stock') * C.stockPer * pMul('stock'));
+        const checkP = [0, 1, 2].map(t => power(t, 'check') * C.checkPer * pMul('check'));
         const cookP = [0, 1, 2].map(t => power(t, 'cook') * C.cookPer);
         const cooks = inShop(s).filter(m => m.role === 'cook' && m.slots.some(Boolean));
         const cookF = cooks.length ? 0.7 + 0.1 * Math.max(...cooks.map(m => stats(s, m)[C.roles.cook.stat])) : 0.6;
@@ -551,7 +594,8 @@
         const royalty = Math.round(sales * C.royalty);
         const limitedCost = Object.entries(lim).reduce((a, [rid, x]) => a + x.made * recipe(rid).cost, 0);
         const upkeepSum = upkeep(s);
-        const profit = sales - buy - limitedCost - wageSum - r.rent - upkeepSum - royalty - fees;
+        const rent = rentOf(s);
+        const profit = sales - buy - limitedCost - wageSum - rent - upkeepSum - royalty - fees;
         s.cash += profit;
 
         // ----- 評判と 常連 -----
@@ -562,7 +606,8 @@
         const avgRatio = prods.reduce((a, p) => a + ratioOf(s, p.id), 0) / prods.length;
         const cheapShop = avgRatio < C.cheapLine;
         const limitedRep = Object.entries(lim).reduce((a, [rid, x]) => a + (recipe(rid).rep && x.sold ? recipe(rid).rep : 0), 0);
-        const target = clamp(C.rep.base + assort * C.rep.assort + service * C.rep.service - (cheapShop ? 5 : 0), 0, 100);
+        const facRep = s.facilities.reduce((a, id) => a + (facility(id).rep || 0), 0);
+        const target = clamp(C.rep.base + assort * C.rep.assort + service * C.rep.service - (cheapShop ? 5 : 0) + facRep, 0, 100);
         s.rep = clamp(s.rep + (target - s.rep) * C.rep.move + Math.min(4, kids * C.kidsRep) + limitedRep + Math.min(2, limitedSold / 100), 0, 100);
         s.regulars = clamp(Math.round(s.regulars * (1 - C.regulars.lose) + (assort * service - 0.5) * C.regulars.gain + (cheapShop ? C.regulars.cheap : 0) - (s.occupy ? 10 : 0)), 0, C.regulars.max);
 
@@ -614,6 +659,15 @@
         }
 
         // ----- 特産品・連携・アイテム -----
+        // 連携: 評判・材料
+        for (const p of C.partners) if (partnerPower(s, p.id)) {
+            if (p.rep) s.rep = clamp(s.rep + p.rep * partnerPower(s, p.id), 0, 100);
+            if (p.mats) for (const [k, v] of Object.entries(p.mats)) {
+                s.matAcc = s.matAcc || {};
+                s.matAcc[k] = (s.matAcc[k] || 0) + v * partnerPower(s, p.id);
+                const n = Math.floor(s.matAcc[k]); s.matAcc[k] -= n; s.mats[k] += n;
+            }
+        }
         s.localAcc += C.localPerWeek;
         for (const p of C.partners) if (p.local && s.partners[p.id].on) s.localAcc += p.local * partnerPower(s, p.id);
         const newLocal = Math.floor(s.localAcc);
@@ -630,7 +684,7 @@
         s.applicants = [];
         if (s.recruiting) {
             s.recruiting = false;
-            const month = weekInfo(s.week + 1 < C.weeks ? s.week + 1 : s.week).start.month;
+            const month = weekInfo(s.week + 1).start.month;
             const pool = C.staff.filter(d => !d.boss && !d.rare && !s.staff.some(m => m.id === d.id)).map(d => d.id);
             const n = Math.min(pool.length, randInt(s, C.recruit.min, C.recruit.max));
             for (let i = 0; i < n; i++) s.applicants.push(pool.splice(Math.floor(rand(s) * pool.length), 1)[0]);
@@ -658,7 +712,7 @@
         }
 
         const report = {
-            week: s.week, info, days, products: rep, limited: lim, sales, buy, limitedCost, wages: wageSum, wageList: s.staff.map(m => ({ id: m.id, yen: wageOf(m), slots: workSlots(m), job: m.job })), upkeep: upkeepSum, rent: r.rent, royalty, fees, profit,
+            week: s.week, info, days, products: rep, limited: lim, sales, buy, limitedCost, wages: wageSum, wageList: s.staff.map(m => ({ id: m.id, yen: wageOf(m), slots: workSlots(m), job: m.job })), upkeep: upkeepSum, rent, royalty, fees, profit,
             customers: Math.round(served), walkAway: Math.round(walk), caps, assort, service, repBefore, repAfter: s.rep, regBefore, regAfter: s.regulars,
             high, cheap, soldOut, kids, wasteYen, segServed, events, returned, cheapShop, work, month: null
         };
@@ -672,7 +726,9 @@
         updateScores(s);
         report.rank = ranking(s).findIndex(x => x.me) + 1;
         report.score = s.score;
-        if (report.rank === 1) s.over = 'clear';
+        if (report.rank === 1 && s.clearedWeek === null) { s.clearedWeek = s.week; report.firstClear = true; }
+        if (s.mode === 'endless') { if (s.week % C.weeks === 0) report.yearEnd = yearOf(s.week - 1); }
+        else if (report.rank === 1) s.over = 'clear';
         else if (s.week >= C.weeks) s.over = s.debt <= 0 ? 'normal' : 'bad';
         else prepareWeek(s);
         return report;
@@ -720,7 +776,7 @@
     }
 
     const Sim = {
-        C, diffOf, rand, dateOf, weekInfo, monthEnds, newGame, available, capOf, stats, slotCap, rolePower, addShelf, removeShelf, shelfUnits, floorUsed, rareNow, setRole, bestRole, wareCap, wareUse, expandWare, slotWage, wageOf, wages, upkeep, upkeepOf, recruit, priceF, ratioOf, productFactor,
+        C, diffOf, yearOf, levelOf, floorCap, facCap, rentOf, canExpand, expandStore, migrate, shelfUpkeep, rand, dateOf, weekInfo, monthEnds, newGame, available, capOf, stats, slotCap, rolePower, addShelf, removeShelf, shelfUnits, floorUsed, rareNow, setRole, bestRole, wareCap, wareUse, expandWare, slotWage, wageOf, wages, upkeep, upkeepOf, recruit, priceF, ratioOf, productFactor,
         estTraffic, estSlots, suggest, dailyNeed, stockOf, prepareWeek, facCost, buyFacility, removeFacility, hire, fire, toggleSlot, sendDungeon, recall,
         matsLeft, craftable, addCraft, useItem, setPartner, partnerFee, bookEvent, repay, borrow, relocate, knownPref, runWeek, ranking,
         product, facility, staffDef, recipe, partner, regionOf, trioOn, inShop, hasFac, SEGS
