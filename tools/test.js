@@ -84,7 +84,23 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
 }
 // スタッフと ダンジョン
 {
-    const s = fresh(); s.cash = 1e7;
+    const r0 = fresh(); r0.cash = 1e7;
+    check('応募が ないと やとえない', !Sim.hire(r0, 'dake'));
+    check('アルバイトを 募集できる', Sim.recruit(r0) && r0.cash === 1e7 - C.recruit.cost);
+    Sim.runWeek(r0);
+    check('募集の つぎの 週に 応募が 来る', r0.applicants.length >= C.recruit.min && r0.applicants.every(id => !Sim.staffDef(id).boss));
+    const app = r0.applicants[0];
+    check('応募者を やとえる', Sim.hire(r0, app) && r0.staff.some(m => m.id === app));
+    const rest = [...r0.applicants];
+    Sim.runWeek(r0);
+    check('やとわなかった 応募者は いなくなる', rest.every(id => !r0.applicants.includes(id)));
+    const pw = fresh();
+    const rp = Sim.runWeek(pw);
+    check('給料 = 時給 × 時間', rp.wages === Sim.staffDef('yasu').pay * C.hoursPerSlot * 7 * 2, rp.wages);
+    const up = fresh(); up.cash = 1e7; Sim.buyFacility(up, 'coffee');
+    const ru = Sim.runWeek(up);
+    check('設備代を 毎週 はらう', ru.upkeep === C.baseUpkeep + Sim.facility('coffee').upkeep && ru.profit === ru.sales - ru.buy - ru.limitedCost - ru.wages - ru.rent - ru.upkeep - ru.royalty - ru.fees);
+    const s = fresh(); s.cash = 1e7; s.applicants = ['dake'];
     Sim.hire(s, 'dake');
     check('やとえる', s.staff.length === 3);
     Sim.sendDungeon(s, 'dake', 'coast');
@@ -99,7 +115,7 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     const w = fresh(); w.staff.forEach(m => { m.slots = [1, 1, 1]; });
     const m0 = w.staff[1].mood; Sim.runWeek(w);
     check('3 コマは 働きすぎで やる気が 下がる', w.staff[1].mood < m0);
-    const t = fresh(); t.cash = 1e7; ['tamu', 'dake'].forEach(id => Sim.hire(t, id));
+    const t = fresh(); t.cash = 1e7; t.applicants = ['tamu', 'dake']; ['tamu', 'dake'].forEach(id => Sim.hire(t, id));
     check('やす・たむ・だけ が そろうと 連携ボーナス', Sim.trioOn(t) && Sim.stats(t, t.staff.find(m => m.id === 'tamu'))[1] === Sim.staffDef('tamu').st[1] + 1);
 }
 // 限定商品・連携・移転

@@ -2,6 +2,14 @@
 const Sim = require('../js/sim.js');
 const C = Sim.C;
 
+// 人が ほしい ときは 募集 → 来た 応募者から やとう (prefer の 順)
+function staffUp(s, want, prefer) {
+    if (!want || s.staff.length >= C.maxStaff) return;
+    const apps = s.applicants || [];
+    const pick = prefer ? prefer.find(id => apps.includes(id)) || apps[0] : apps[0];
+    if (pick) Sim.hire(s, pick);
+    else Sim.recruit(s);
+}
 function autoOrder(s, mul = 1) {
     for (const p of C.products) if (Sim.available(s, p.id)) s.orders[p.id] = Math.round(Sim.suggest(s, p.id) * mul);
 }
@@ -26,10 +34,7 @@ function normal(s) {
     autoOrder(s);
     for (const f of [...C.facilities].sort((a, b) => a.cost - b.cost)) if (s.cash > Sim.facCost(s, f.id) + 300000) Sim.buyFacility(s, f.id);
     const need = Sim.estSlots(s);
-    if ([0, 1, 2].some(t => Sim.slotCap(s, t) < need[t]) && s.cash > 200000) {
-        const next = C.staff.find(d => !s.staff.some(m => m.id === d.id));
-        if (next) Sim.hire(s, next.id);
-    }
+    staffUp(s, [0, 1, 2].some(t => Sim.slotCap(s, t) < need[t]) && s.cash > 200000);
     coverSlots(s, 1.0);
 }
 
@@ -62,10 +67,7 @@ function good(s) {
     // スタッフ: 3 人 そろえる → 足りなければ 接客の 強い 人
     const want = ['tamu', 'dake', 'kotani', 'yamamou', 'ueno'];
     const need = Sim.estSlots(s);
-    if (s.staff.length < C.maxStaff && s.cash > 300000 && ([0, 1, 2].some(t => Sim.slotCap(s, t) < need[t] * 1.05) || s.staff.length < 4)) {
-        const id = want.find(x => !s.staff.some(m => m.id === x));
-        if (id) Sim.hire(s, id);
-    }
+    staffUp(s, s.cash > 300000 && ([0, 1, 2].some(t => Sim.slotCap(s, t) < need[t] * 1.05) || s.staff.length < 4), want);
     // ダンジョン: 探索の 得意な 人を 1 人 (やる気が ある とき)
     const diver = s.staff.find(m => ['dake', 'ueno', 'yasu'].includes(m.id) && m.job === 'shop' && m.mood > 45 && !m.tired);
     if (diver && s.staff.length >= 4) Sim.sendDungeon(s, diver.id, s.week > 20 ? 'moon' : 'coast');
@@ -85,7 +87,8 @@ function good(s) {
 function reckless(s) {
     while (Sim.borrow(s));
     for (const f of [...C.facilities].sort((a, b) => b.cost - a.cost)) Sim.buyFacility(s, f.id);
-    for (const d of C.staff) Sim.hire(s, d.id);
+    for (const id of [...(s.applicants || [])]) Sim.hire(s, id);
+    Sim.recruit(s);
     for (const m of Sim.inShop(s)) m.slots = [1, 1, 1];
     autoOrder(s, 2);
     for (const p of C.products) s.prices[p.id] = Math.round(p.price * 0.7 / 10) * 10;

@@ -171,27 +171,32 @@
             const n = m.job === 'shop' ? m.slots.filter(Boolean).length : 2;
             const moodNote = m.job === 'shop' ? (n === 3 ? '働きすぎ' : n === 0 ? '休み' : '') : '';
             return `<div class="staff-card${m.job === 'dungeon' ? ' out' : ''}">${img(d.art, 48)}<div class="sc-main">
-                <div class="sc-head"><b>${d.name}</b>${m.tired ? '<span class="tag bad">つかれ</span>' : ''}${C.trio.includes(m.id) && Sim.trioOn(s) ? '<span class="tag good">3 人 連携</span>' : ''}<small>${d.boss ? '店長' : `給料 ${man(Sim.wageOf(m))}/週`}</small></div>
+                <div class="sc-head"><b>${d.name}</b>${m.tired ? '<span class="tag bad">つかれ</span>' : ''}${C.trio.includes(m.id) && Sim.trioOn(s) ? '<span class="tag good">3 人 連携</span>' : ''}<small>${d.boss ? '店長 (給料なし)' : `時給 ${d.pay.toLocaleString()}円・今週 ${man(Sim.wageOf(m))}`}</small></div>
                 <div class="stats">${stats}</div>
                 <div class="mood">やる気 ${bar(m.mood, 100)} ${Math.round(m.mood)} <small class="${n === 3 ? 'bad' : ''}">${moodNote}</small></div>
                 ${work}</div>${d.boss || m.job === 'dungeon' ? '' : `<button class="mini fire" data-fire="${m.id}" title="やめて もらう">×</button>`}</div>`;
         }).join('');
-        const cand = C.staff.filter(d => !s.staff.some(m => m.id === d.id));
-        const hire = cand.map(d => `<div class="hire">${img(d.art, 36)}<div><b>${d.name}</b><small>${d.text}・接${d.st[0]} 品${d.st[1]} 調${d.st[2]} 探${d.st[3]}・給料 ${man(d.wage)}/週</small></div><button class="mini" data-hire="${d.id}"${s.staff.length >= C.maxStaff || s.cash < d.wage ? ' disabled' : ''}>やとう</button></div>`).join('');
+        const apps = (s.applicants || []).map(id => { const d = Sim.staffDef(id); return `<div class="hire">${img(d.art, 36)}<div><b>${d.name}</b><small>${d.text}<br>接客${d.st[0]} 品出し${d.st[1]} 調理${d.st[2]} 探索${d.st[3]}・時給 ${d.pay.toLocaleString()}円 (1 コマ ${man(Sim.slotWage(id))}/週)</small></div><button class="mini" data-hire="${d.id}"${s.staff.length >= C.maxStaff ? ' disabled' : ''}>やとう</button></div>`; }).join('');
+        const full = s.staff.length >= C.maxStaff;
+        const recruit = s.recruiting ? '<p class="note">求人を 出した！ 来週の はじめに 応募が 来る。</p>'
+            : `<div class="hire"><span class="ri">📋</span><div><b>アルバイトを 募集する</b><small>求人を 出すと 来週 ${C.recruit.min}〜${C.recruit.max} 人 応募が 来る (来ない ことも)。その 週の うちに やとわないと ほかへ 行く。</small></div><button class="mini" data-recruit${full || s.cash < C.recruit.cost ? ' disabled' : ''}>${man(C.recruit.cost)}</button></div>`;
+        const hire = (apps ? `<p class="note">応募が 来て いる！ 今週の うちに 面接して やとおう。</p>${apps}` : '') + recruit;
         const items = Object.entries(C.items).map(([k, it]) => `<div class="hire"><span class="ri">${it.icon}</span><div><b>${it.name} ×${s.items[k]}</b><small>${it.text}${s.effects[k] ? `・あと ${s.effects[k]} 週` : ''}</small></div><button class="mini" data-item="${k}"${s.items[k] ? '' : ' disabled'}>つかう</button></div>`).join('');
         $('tab-staff').innerHTML = `<h3>シフト (1 日の 客 / 見こみ・土曜くらい)</h3><div class="slot-sums">${summary}</div>
             <p class="note">朝・昼・夜の 3 コマ。接客 1 で 1 コマ ${C.serve} 人 さばける。3 コマ 入ると 働きすぎで やる気が 下がり、やめて しまう ことも。やす・たむ・だけ の 3 人が 店に そろうと 連携ボーナス。</p>
             <div class="staff-list">${cards}</div>
             <h3>ダンジョン</h3><p class="note">${C.dungeons.map(d => `<b>${d.name}</b> ${d.weeks} 週 (${Object.keys(d.rewards).map(k => C.materials[k].name).join('・')}${d.maboroshi ? '・幻の 食材' : ''})`).join('<br>')}<br>探索が 高いほど 多く 持って 帰る。帰った 次の 週は つかれて 仕事が 下手に なる。</p>
             <h3>便利アイテム</h3><div class="hire-list">${items}</div>
-            <h3>スタッフを やとう (${s.staff.length}/${C.maxStaff})</h3><div class="hire-list">${hire || '<small>もう いない</small>'}</div>`;
+            <h3>アルバイト (${s.staff.length}/${C.maxStaff} 人)</h3><div class="hire-list">${hire}</div>
+            <p class="note">給料は 時給 × ${C.hoursPerSlot} 時間 × 7 日 × 入った コマの 数。毎週 はらう。ダンジョンの あいだも 2 コマぶん はらう。今週の 給料 合計 <b>${man(Sim.wages(s))}</b></p>`;
     }
 
     function renderShop() {
         const used = s.facilities.length;
-        $('tab-shop').innerHTML = `<p class="note">店の 広さは ${C.slots} マス (いま ${used} マス)。施設ごとに 集まる 客が ちがう。はずすと ${Math.round(C.sellBack * 100)}% もどる。</p><div class="shop">${C.facilities.map(f => {
+        $('tab-shop').innerHTML = `<p class="note">店の 広さは ${C.slots} マス (いま ${used} マス)。施設ごとに 集まる 客が ちがう。買う ときの お金の ほかに、毎週 設備代 (リース・電気代) が かかる。はずすと 買った お金の ${Math.round(C.sellBack * 100)}% もどる。</p>
+            <p>今週の 設備代 <b>${man(Sim.upkeep(s))}</b> <small class="note">(店の 基本の 設備 ${man(C.baseUpkeep)}${s.facilities.map(id => ` + ${Sim.facility(id).name} ${man(Sim.upkeepOf(s, id))}`).join('')})</small></p><div class="shop">${C.facilities.map(f => {
             const have = Sim.hasFac(s, f.id), cost = Sim.facCost(s, f.id);
-            return `<div class="item${have ? ' have' : ''}"><span class="ui">${f.icon}</span><div><b>${f.name}</b><small>${f.text}${f.warn ? `<br><span class="warn">⚠ ${f.warn}</span>` : ''}</small></div>
+            return `<div class="item${have ? ' have' : ''}"><span class="ui">${f.icon}</span><div><b>${f.name}</b><small>${f.text}・設備代 ${man(Sim.upkeepOf(s, f.id))}/週${f.warn ? `<br><span class="warn">⚠ ${f.warn}</span>` : ''}</small></div>
                 ${have ? `<button class="mini" data-remove="${f.id}">はずす</button>` : `<button data-buy="${f.id}"${s.cash < cost || used >= C.slots ? ' disabled' : ''}>${man(cost)}</button>`}</div>`;
         }).join('')}</div>`;
     }
@@ -245,7 +250,7 @@
     function updateCost() {
         const buy = C.products.reduce((a, p) => a + (Sim.available(s, p.id) ? (s.orders[p.id] || 0) * p.cost * 7 : 0), 0);
         const fees = C.partners.filter(p => !p.perUse && s.partners[p.id].on).reduce((a, p) => a + Sim.partnerFee(s, p.id), 0) + (s.eventDay >= 0 ? Sim.partnerFee(s, 'event') : 0);
-        $('cost-note').innerHTML = `仕入れ 約${man(buy)}・給料 ${man(Sim.wages(s))}・家賃 ${man(Sim.regionOf(s).rent)}${fees ? `・連携 ${man(fees)}` : ''}`;
+        $('cost-note').innerHTML = `仕入れ 約${man(buy)}・給料 ${man(Sim.wages(s))}・家賃 ${man(Sim.regionOf(s).rent)}・設備代 ${man(Sim.upkeep(s))}${fees ? `・連携 ${man(fees)}` : ''}`;
     }
 
     // ----- 操作 -----
@@ -273,6 +278,7 @@
         else if (d.slot) { Sim.toggleSlot(s, d.slot, Number(d.t)); renderStaff(); updateCost(); }
         else if (d.recall) { Sim.recall(s, d.recall); renderStaff(); }
         else if (d.fire) { if (confirm(`${Sim.staffDef(d.fire).name}に やめて もらう？`)) { Sim.fire(s, d.fire); render(); } }
+        else if ('recruit' in d) { if (Sim.recruit(s)) { say('koori', `アルバイトの 求人を 出したよ！ 来週 応募が 来るかな。`); render(); } }
         else if (d.hire) { if (Sim.hire(s, d.hire)) { say(Sim.staffDef(d.hire).art, `${Sim.staffDef(d.hire).name}です！ よろしく おねがいします！`); render(); } }
         else if (d.item) { if (Sim.useItem(s, d.item)) { say('koori', `${C.items[d.item].name}を つかった！ ${C.items[d.item].text}`); render(); } }
         else if (d.buy) { const f = Sim.facility(d.buy); if (Sim.buyFacility(s, f.id)) { say('koori', `「${f.name}」を 置いたよ！ ${f.text}`); render(); } }
@@ -372,7 +378,7 @@
                 <div><span>常連</span><b>${r.regAfter} 人 <small class="${r.regAfter >= r.regBefore ? 'good' : 'bad'}">${r.regAfter >= r.regBefore ? '+' : ''}${r.regAfter - r.regBefore}</small></b></div>
                 <div><span>ランキング</span><b>${r.rank} 位 <small>${r.score} 点</small></b></div>
             </div>
-            <details><summary>お金の くわしい ところ</summary><p class="money">売上 ${yen(r.sales)}<br>仕入れ −${yen(r.buy + r.limitedCost)} (うち 廃棄 ${yen(r.wasteYen)})<br>給料 −${yen(r.wages)}<br>家賃 −${yen(r.rent)}<br>本部へ (売上の ${Math.round(C.royalty * 100)}%) −${yen(r.royalty)}${r.fees ? `<br>連携 −${yen(r.fees)}` : ''}<br>資金 ${yen(s.cash)}</p></details>
+            <details open><summary>お金の くわしい ところ</summary><p class="money">売上 ${yen(r.sales)}<br>仕入れ −${yen(r.buy + r.limitedCost)} (うち 廃棄 ${yen(r.wasteYen)})<br>給料 −${yen(r.wages)}${r.wageList.filter(w => w.yen).map(w => `<small><br>　${Sim.staffDef(w.id).name} ${w.job === 'dungeon' ? 'ダンジョン' : `${w.slots} コマ`} ${yen(w.yen)}</small>`).join('')}<br>家賃 −${yen(r.rent)}<br>設備代 −${yen(r.upkeep)}<br>本部へ (売上の ${Math.round(C.royalty * 100)}%) −${yen(r.royalty)}${r.fees ? `<br>連携 −${yen(r.fees)}` : ''}<br>資金 ${yen(s.cash)}</p></details>
             <div class="table-wrap"><table class="orders small"><thead><tr><th>商品</th><th>入荷</th><th>売れた</th><th>品切れ</th><th>廃棄</th><th>売上</th></tr></thead><tbody>${prow}</tbody></table></div>
             ${evs}${month}
             <div class="talk in">${img('furukawa', 44)}<p><b>ふるカワ</b>「${furukawa(r)}」</p></div>
@@ -430,7 +436,8 @@
         s = Sim.newGame('こおりマート', Number(params.get('seed') || 5), C.regions.some(r => r.id === play) ? play : 'tsugaku');
         const weeks = Number(params.get('weeks') || 0);
         for (let i = 0; i < weeks && !s.over; i++) {
-            if (i === 1) { Sim.buyFacility(s, 'fryer'); Sim.hire(s, 'tamu'); Sim.hire(s, 'dake'); }
+            if (i === 1) { Sim.buyFacility(s, 'fryer'); s.applicants = ['tamu', 'dake']; Sim.hire(s, 'tamu'); Sim.hire(s, 'dake'); }
+            if (i === weeks - 2) Sim.recruit(s);
             if (i === 3) Sim.sendDungeon(s, 'dake', 'forest');
             for (const p of C.products) if (Sim.available(s, p.id)) s.orders[p.id] = Sim.suggest(s, p.id);
             lastReport = Sim.runWeek(s);

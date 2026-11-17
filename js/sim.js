@@ -46,7 +46,7 @@
             staff: C.startStaff.map((id, i) => ({ ...newMember(id), slots: i % 2 ? [0, 1, 1] : [1, 1, 0] })),
             mats: { local: 1, kinoko: 0, umi: 0, maboroshi: 0 }, localAcc: 0, craft: {}, limited: {},
             items: { maneki: 0, hieishi: 0, genki: 0 }, effects: { maneki: 0, hieishi: 0 },
-            partners: {}, eventDay: -1,
+            partners: {}, eventDay: -1, recruiting: false, applicants: [],
             know: {}, history: [], log: [], over: null, flags: {},
             rivals: C.rivals.map(r => ({ name: r.name, owner: r.owner, sales: [], score: 0 }))
         };
@@ -82,7 +82,9 @@
         return Math.round(inShop(s).filter(m => m.slots[t]).reduce((a, m) => a + stats(s, m)[0] * C.serve, 0) * eat);
     }
     const workSlots = m => (m.job === 'shop' ? m.slots.filter(Boolean).length : 2);
-    const wageOf = m => Math.round(staffDef(m.id).wage * workSlots(m) / 2);
+    // 給料 = 時給 × 時間 (1 コマ = hoursPerSlot 時間 × 7 日)
+    const slotWage = id => staffDef(id).pay * C.hoursPerSlot * 7;
+    const wageOf = m => slotWage(m.id) * workSlots(m);
     const wages = s => s.staff.reduce((a, m) => a + wageOf(m), 0);
 
     // ----- 値段と 客 -----
@@ -190,10 +192,17 @@
         if (p) { s.orders[p.id] = 0; s.stock[p.id] = []; }
         return true;
     }
+    // アルバイト募集: お金を はらうと つぎの 週に 応募が 来る
+    function recruit(s) {
+        if (s.recruiting || s.cash < C.recruit.cost || s.staff.length >= C.maxStaff) return false;
+        s.cash -= C.recruit.cost;
+        s.recruiting = true;
+        return true;
+    }
     function hire(s, id) {
         const d = staffDef(id);
-        if (!d || s.staff.some(m => m.id === id) || s.staff.length >= C.maxStaff || s.cash < d.wage) return false;
-        s.cash -= d.wage; // 支度金
+        if (!d || !(s.applicants || []).includes(id) || s.staff.some(m => m.id === id) || s.staff.length >= C.maxStaff) return false;
+        s.applicants = s.applicants.filter(x => x !== id);
         const m = newMember(id);
         const order = [0, 1, 2].sort((a, b) => slotCap(s, a) - slotCap(s, b));
         m.slots = [0, 0, 0];
@@ -201,6 +210,9 @@
         s.staff.push(m);
         return true;
     }
+    // 設備代 (毎週)
+    const upkeep = s => C.baseUpkeep + s.facilities.reduce((a, id) => a + upkeepOf(s, id), 0);
+    const upkeepOf = (s, id) => Math.round(facility(id).upkeep * (id === 'parking' ? regionOf(s).parkingMul : 1));
     function fire(s, id) {
         const m = s.staff.find(x => x.id === id);
         if (!m || staffDef(id).boss || m.job === 'dungeon') return false;
@@ -423,7 +435,8 @@
         const fees = C.partners.filter(p => !p.perUse && s.partners[p.id].on).reduce((a, p) => a + partnerFee(s, p.id), 0) + djFee;
         const royalty = Math.round(sales * C.royalty);
         const limitedCost = Object.entries(lim).reduce((a, [rid, x]) => a + x.made * recipe(rid).cost, 0);
-        const profit = sales - buy - limitedCost - wageSum - r.rent - royalty - fees;
+        const upkeepSum = upkeep(s);
+        const profit = sales - buy - limitedCost - wageSum - r.rent - upkeepSum - royalty - fees;
         s.cash += profit;
 
         // ----- 評判と 常連 -----
@@ -498,6 +511,16 @@
             else if (!p.perUse && rand(s) < C.steal) { st.taken = C.stealWeeks; say('koori', `${p.name}が ライバル店に とられた… (${C.stealWeeks} 週 連携 できない)`); }
         }
         s.eventDay = -1;
+        // 応募: 来週の はじめに とどく (やとわなかった 人は いなくなる)
+        s.applicants = [];
+        if (s.recruiting) {
+            s.recruiting = false;
+            const pool = C.staff.filter(d => !d.boss && !s.staff.some(m => m.id === d.id)).map(d => d.id);
+            const n = Math.min(pool.length, randInt(s, C.recruit.min, C.recruit.max));
+            for (let i = 0; i < n; i++) s.applicants.push(pool.splice(Math.floor(rand(s) * pool.length), 1)[0]);
+            if (s.applicants.length) say('koori', `アルバイトの 応募が ${s.applicants.length} 人 来た！ (シフトの ページで 面接)`);
+            else say('koori', 'アルバイトの 応募は だれも 来なかった…');
+        }
         for (const k of Object.keys(s.effects)) if (s.effects[k]) s.effects[k]--;
 
         // 地域の 知識 (売った 商品の 好みが 分かって くる)
@@ -513,7 +536,7 @@
         }
 
         const report = {
-            week: s.week, info, days, products: rep, limited: lim, sales, buy, limitedCost, wages: wageSum, rent: r.rent, royalty, fees, profit,
+            week: s.week, info, days, products: rep, limited: lim, sales, buy, limitedCost, wages: wageSum, wageList: s.staff.map(m => ({ id: m.id, yen: wageOf(m), slots: workSlots(m), job: m.job })), upkeep: upkeepSum, rent: r.rent, royalty, fees, profit,
             customers: Math.round(served), walkAway: Math.round(walk), caps, assort, service, repBefore, repAfter: s.rep, regBefore, regAfter: s.regulars,
             high, cheap, soldOut, kids, wasteYen, segServed, events, returned, cheapShop, month: null
         };
@@ -575,7 +598,7 @@
     }
 
     const Sim = {
-        C, rand, dateOf, weekInfo, monthEnds, newGame, available, capOf, stats, slotCap, wageOf, wages, priceF, ratioOf, productFactor,
+        C, rand, dateOf, weekInfo, monthEnds, newGame, available, capOf, stats, slotCap, slotWage, wageOf, wages, upkeep, upkeepOf, recruit, priceF, ratioOf, productFactor,
         estTraffic, estSlots, suggest, prepareWeek, facCost, buyFacility, removeFacility, hire, fire, toggleSlot, sendDungeon, recall,
         matsLeft, craftable, addCraft, useItem, setPartner, partnerFee, bookEvent, repay, borrow, relocate, knownPref, runWeek, ranking,
         product, facility, staffDef, recipe, partner, regionOf, trioOn, inShop, hasFac, SEGS

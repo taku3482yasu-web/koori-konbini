@@ -103,32 +103,38 @@
         // ----- 便利施設 (企画書: 店の 広さに 限り・施設ごとに 集まる 客が ちがう) -----
         slots: 4,                  // ★ 置ける 数
         facilities: [
-            { id: 'eatin', name: 'イートインルーム', icon: '🪑', cost: 800000, seg: { student: 1.25, worker: 1.1 }, capMul: 0.9, text: '学生・ひとり飯が 来る', warn: '長居で レジの 回転が 落ちる' },
-            { id: 'smoke', name: 'たばこ室', icon: '🚬', cost: 600000, seg: { worker: 1.2, driver: 1.3, family: 0.8 }, text: 'サラリーマン・トラック運転手が 来る', warn: '家族連れが へる' },
-            { id: 'parking', name: '駐車場', icon: '🚗', cost: 1000000, seg: { family: 1.35, driver: 1.4 }, text: '家族連れ・車の 客が 来る', warn: '駅前では 高い' },
-            { id: 'wifi', name: 'Wi-Fi・充電', icon: '📶', cost: 300000, seg: { student: 1.2, worker: 1.05, family: 1.05, driver: 1.05 }, spend: 0.92, text: '長居する 客が 来る', warn: '客単価が 低い' },
-            { id: 'coffee', name: 'コーヒーマシン', icon: '☕', cost: 500000, text: 'いれたてコーヒーを 売れる (もうけが 大きい)' },
-            { id: 'fryer', name: 'ホットスナック什器', icon: '🍗', cost: 400000, text: 'からあげ・コロッケを 売れる (寒いほど 売れる)' },
-            { id: 'oden', name: 'おでん鍋', icon: '🍢', cost: 150000, text: 'おでんを 売れる (秋〜冬の 主役)' },
-            { id: 'atm', name: 'ATM', icon: '🏧', cost: 600000, seg: { student: 1.06, worker: 1.06, family: 1.06, driver: 1.06 }, text: 'どの 客も 少し ふえる' },
-            { id: 'fridge', name: '大型冷蔵ケース', icon: '🧊', cost: 400000, boost: { drink: 1.1, ice: 1.15 }, capMul: { drink: 1.5, ice: 1.5 }, text: 'ドリンク・アイスが 売れる・棚 1.5 倍' }
+            { id: 'eatin', name: 'イートインルーム', icon: '🪑', cost: 800000, upkeep: 15000, seg: { student: 1.25, worker: 1.1 }, capMul: 0.9, text: '学生・ひとり飯が 来る', warn: '長居で レジの 回転が 落ちる' },
+            { id: 'smoke', name: 'たばこ室', icon: '🚬', cost: 600000, upkeep: 8000, seg: { worker: 1.2, driver: 1.3, family: 0.8 }, text: 'サラリーマン・トラック運転手が 来る', warn: '家族連れが へる' },
+            { id: 'parking', name: '駐車場', icon: '🚗', cost: 1000000, upkeep: 10000, seg: { family: 1.35, driver: 1.4 }, text: '家族連れ・車の 客が 来る', warn: '駅前では 高い' },
+            { id: 'wifi', name: 'Wi-Fi・充電', icon: '📶', cost: 300000, upkeep: 6000, seg: { student: 1.2, worker: 1.05, family: 1.05, driver: 1.05 }, spend: 0.92, text: '長居する 客が 来る', warn: '客単価が 低い' },
+            { id: 'coffee', name: 'コーヒーマシン', icon: '☕', cost: 500000, upkeep: 12000, text: 'いれたてコーヒーを 売れる (もうけが 大きい)' },
+            { id: 'fryer', name: 'ホットスナック什器', icon: '🍗', cost: 400000, upkeep: 10000, text: 'からあげ・コロッケを 売れる (寒いほど 売れる)' },
+            { id: 'oden', name: 'おでん鍋', icon: '🍢', cost: 150000, upkeep: 5000, text: 'おでんを 売れる (秋〜冬の 主役)' },
+            { id: 'atm', name: 'ATM', icon: '🏧', cost: 600000, upkeep: 6000, seg: { student: 1.06, worker: 1.06, family: 1.06, driver: 1.06 }, text: 'どの 客も 少し ふえる' },
+            { id: 'fridge', name: '大型冷蔵ケース', icon: '🧊', cost: 400000, upkeep: 9000, boost: { drink: 1.1, ice: 1.15 }, capMul: { drink: 1.5, ice: 1.5 }, text: 'ドリンク・アイスが 売れる・棚 1.5 倍' }
         ],
         sellBack: 0.3,             // ★ 施設を はずすと 戻る お金
+        // upkeep = 毎週の 設備代 (リース・電気代・手入れ。2026-11-17 ユーザー指定: 設備代も はらう) ★ 金額は Claude
+        baseUpkeep: 30000,         // ★ 店の 基本の 設備 (レジ・冷蔵の 棚・照明) の 電気代・リース
 
         // ----- スタッフ (企画書: シリーズの キャラ・接客/品出し/調理/ダンジョンの 得意不得意・シフト・給料と やる気) ★ -----
-        // st = [接客, 品出し, 調理, 探索] (1〜5)。wage = 2 コマ (朝昼夜の うち 2 つ) 入った 週の 給料。1 コマ ふえる ごとに 半分
+        // st = [接客, 品出し, 調理, 探索] (1〜5)。pay = 時給 (2026-11-17 ユーザー: アルバイトを 募集・給料を 払う)。
+        // 1 コマ = 1 日 hoursPerSlot 時間 × 7 日。給料は 毎週 はらう。ダンジョンの あいだも 2 コマぶん はらう
         staff: [
-            { id: 'koori', name: 'こおりくん', art: 'koori', st: [3, 3, 2, 2], wage: 0, boss: true, text: '店長。就活に 失敗した' },
-            { id: 'yasu', name: 'やす', art: 'yasu', st: [3, 2, 2, 4], wage: 24000, text: 'やすパンチで ダンジョンも こなす' },
-            { id: 'tamu', name: 'たむ', art: 'tamu', st: [2, 4, 3, 3], wage: 24000, text: '品出しが はやい' },
-            { id: 'dake', name: 'だけ', art: 'dake', st: [2, 2, 4, 4], wage: 24000, text: '調理と 探索が 得意' },
-            { id: 'kotani', name: 'こたに', art: 'kotani', st: [5, 3, 2, 1], wage: 32000, text: '接客の プロ。ダンジョンは にがて' },
-            { id: 'yamamou', name: 'やまもぅ', art: 'yamamou', st: [2, 3, 5, 2], wage: 30000, text: '料理が うまい' },
-            { id: 'ishii', name: 'イシイー', art: 'ishii', st: [1, 2, 2, 5], wage: 22000, text: '遺跡の 達人。お店は にがて' },
-            { id: 'ikekimu', name: 'いけきむ', art: 'ikekimu', st: [3, 4, 2, 3], wage: 27000, text: 'なんでも そつなく' },
-            { id: 'ueno', name: 'マッスルウエノーブル', art: 'ueno', st: [2, 5, 1, 5], wage: 34000, text: '筋肉で 品出しも 探索も' }
+            { id: 'koori', name: 'こおりくん', art: 'koori', st: [3, 3, 2, 2], pay: 0, boss: true, text: '店長。就活に 失敗した' },
+            { id: 'yasu', name: 'やす', art: 'yasu', st: [3, 2, 2, 4], pay: 1000, text: 'やすパンチで ダンジョンも こなす' },
+            { id: 'tamu', name: 'たむ', art: 'tamu', st: [2, 4, 3, 3], pay: 1000, text: '品出しが はやい' },
+            { id: 'dake', name: 'だけ', art: 'dake', st: [2, 2, 4, 4], pay: 1000, text: '調理と 探索が 得意' },
+            { id: 'kotani', name: 'こたに', art: 'kotani', st: [5, 3, 2, 1], pay: 1300, text: '接客の プロ。ダンジョンは にがて' },
+            { id: 'yamamou', name: 'やまもぅ', art: 'yamamou', st: [2, 3, 5, 2], pay: 1200, text: '料理が うまい' },
+            { id: 'ishii', name: 'イシイー', art: 'ishii', st: [1, 2, 2, 5], pay: 950, text: '遺跡の 達人。お店は にがて' },
+            { id: 'ikekimu', name: 'いけきむ', art: 'ikekimu', st: [3, 4, 2, 3], pay: 1100, text: 'なんでも そつなく' },
+            { id: 'ueno', name: 'マッスルウエノーブル', art: 'ueno', st: [2, 5, 1, 5], pay: 1400, text: '筋肉で 品出しも 探索も' }
         ],
         startStaff: ['koori', 'yasu'],
+        hoursPerSlot: 5,
+        // アルバイト募集 (2026-11-17 ユーザー指定): 求人を 出すと つぎの 週に 応募が 来る。その 週の うちに やとわないと ほかへ 行く
+        recruit: { cost: 20000, min: 1, max: 3 },
         maxStaff: 6,               // こおりくんを ふくめて
         serve: 40,                 // 接客 1 で 1 コマに さばける 客
         stock: 60,                 // 品出し 1 で 1 コマに 棚に 出せる 客の ぶん
@@ -204,7 +210,7 @@
         // ★ 点 = 直近 4 週の 売上の 平均 (万円) + 評判 × 0.5。daily ではなく 1 週の 売上 (年の はじめ)、grow = 1 年で のびる 割合
         rankWeeks: 4,
         rivals: [
-            { name: 'KING.ASAHARA チェーン 小倉本店', owner: 'asahara', boss: 'KING.ASAHARA', weekly: 2500000, grow: 0.3, rep: 85, line: 'おかおかの 王は この KING.ASAHARA だ！' },
+            { name: 'KING.ASAHARA チェーン 小倉本店', owner: 'asahara', boss: 'KING.ASAHARA', weekly: 2400000, grow: 0.3, rep: 85, line: 'おかおかの 王は この KING.ASAHARA だ！' },
             { name: 'ハリーストア', owner: 'harigeneral', boss: 'ハリージェネラル', weekly: 2000000, grow: 0.15, rep: 70, line: '森の 王が コンビニでも 天下を とる' },
             { name: 'リュウソン', owner: 'hyougaryu', boss: 'ヒョウガリュウ', weekly: 1650000, grow: 0.1, rep: 65, line: '氷の 竜の 店に かなう ものか' },
             { name: 'ネオンたぬき 24', owner: 'neontanuki', boss: 'ネオンたぬき', weekly: 1400000, grow: 0.12, rep: 55, line: '夜は ぜんぶ たぬきの もの' },
