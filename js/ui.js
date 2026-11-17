@@ -96,6 +96,7 @@
         const seed = params.get('seed') ? Number(params.get('seed')) : Math.floor(Math.random() * 2 ** 31);
         s = Sim.newGame($('store-name').value.trim() || 'こおりマート', seed, b.dataset.region, difficulty, mode);
         start();
+        setTimeout(tutStart, 400);
         say('furukawa', `${Sim.regionOf(s).name}に 開店！ 店は からっぽ。商品は 発注しないと とどかないよ。まずは 発注 (「ぜんぶ 目安に」でも いい) と シフト・持ち場を きめて「営業する」だ。`);
     });
 
@@ -129,6 +130,7 @@
         renderArea();
         renderRank();
         updateCost();
+        if (tut >= 0) setTimeout(tutShow, 0);
     }
 
     function lastOf(id) { const h = s.history.filter(x => !x.moved); return h.length ? h[h.length - 1].products[id] : null; }
@@ -185,7 +187,7 @@
             <p class="note">商品は 発注しないと とどかない。毎朝 とどいた 商品は 検品して 倉庫へ、品出しで 棚へ。客が 買えるのは 棚の 商品だけ。倉庫が いっぱいだと 受け取れない。</p>
             ${costBox}
             <div class="order-head"><span>値段と 毎朝 とどく 数</span><span><label class="chip${showLocked ? ' on' : ''}"><input type="checkbox" id="show-locked"${showLocked ? ' checked' : ''}>売って いない 商品も 見る</label> <button id="price-reset" class="mini">ぜんぶ 定価に もどす</button> <button id="auto-all" class="mini">ぜんぶ 目安に</button></span></div>
-            <div class="table-wrap"><table class="orders order-main"><thead><tr><th></th><th>商品</th><th>仕入れ</th><th>売り値</th><th>1こ の もうけ</th><th>見こみ<small> (先週/日)</small></th><th>棚・倉庫</th><th>発注/日</th><th>目安</th></tr></thead><tbody>${rows}</tbody></table></div>
+            <div class="table-wrap"><table class="orders order-main"><thead><tr><th></th><th>商品</th><th>仕入れ</th><th>売り値</th><th>1こ の もうけ</th><th>見こみ<br><small>先週/日</small></th><th>棚・倉庫</th><th>発注/日</th><th>目安</th></tr></thead><tbody>${rows}</tbody></table></div>
             <p class="note">仕入れは 週ごとに 変わる (季節・天気・行事)。↑↓ = 先週から 変わった 額。売り値は 自動では 変わらないので、もうけが 赤 (赤字)・黄 (${Math.round(C.lowMargin * 100)}% 未満) の 商品は 見なおそう。売り値の ボタンを 押すと メニューが 出る。<br>
             逃 = 品切れで 買えなかった・断 = 倉庫が いっぱいで 受け取れなかった・廃 = 廃棄・食 = 子ども食堂へ。商品名の ↑↓ = この 地域の 好み (売って いくと 分かる)。</p>
             <h3>期限 今日までの 商品</h3>
@@ -353,6 +355,7 @@
         tab = b.dataset.tab;
         document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
         document.querySelectorAll('#game .panel').forEach(p => { p.hidden = p.id !== `tab-${tab}`; });
+        if (tab === 'staff') tutDone('staffTab');
     });
     $('game').addEventListener('click', e => {
         if (running) return;
@@ -361,7 +364,7 @@
         const d = t.dataset;
         if (d.step) { s.orders[d.step] = Math.max(0, (s.orders[d.step] || 0) + Number(d.d)); const inp = document.querySelector(`input[data-order="${d.step}"]`); if (inp) inp.value = s.orders[d.step]; updateCost(); }
         else if (d.auto) { s.orders[d.auto] = Sim.suggest(s, d.auto); renderOrder(Sim.weekInfo(s.week)); updateCost(); }
-        else if (t.id === 'auto-all') { for (const p of C.products) if (Sim.available(s, p.id)) s.orders[p.id] = Sim.suggest(s, p.id); renderOrder(Sim.weekInfo(s.week)); updateCost(); }
+        else if (t.id === 'auto-all') { for (const p of C.products) if (Sim.available(s, p.id)) s.orders[p.id] = Sim.suggest(s, p.id); renderOrder(Sim.weekInfo(s.week)); updateCost(); tutDone('auto'); }
         else if (d.price) { Sim.setPrice(s, d.price, s.prices[d.price] + Number(d.d) * C.priceStep); renderOrder(Sim.weekInfo(s.week)); }
         else if (d.pmenu) { openPriceMenu(d.pmenu, t); return; }
         else if (t.id === 'price-reset') { for (const p of C.products) s.prices[p.id] = p.price; renderOrder(Sim.weekInfo(s.week)); say('furukawa', 'ぜんぶ 定価に もどしたよ。'); }
@@ -448,6 +451,7 @@
         if (running) return;
         if (!s.staff.some(m => m.job === 'shop' && m.slots.some(Boolean))) { say('koori', 'だれも シフトに 入って ないよ！'); return; }
         closePriceMenu();
+        if (tut >= 0) { tut = -1; s.flags.tutDone = true; tutShow(); }
         Sim.beginWeek(s);
         save();
         playWeek();
@@ -768,6 +772,53 @@
         });
     }
 
+    // ----- はじめての 人への 案内 (2026-11-17 ユーザー指定: 指示書 その1 の 5 章) -----
+    // 1 週目だけ ふるカワが 順に 案内する。「遊び方」から もう一度 見られる
+    const TUT = [
+        { el: () => $('auto-all'), tab: 'order', text: 'まずは 発注！ 店は からっぽ だから、「ぜんぶ 目安に」を 押してね。売れそうな 数を 入れて くれるよ。', done: 'auto' },
+        { el: () => document.querySelector('.tabs button[data-tab="staff"]'), text: 'つぎは シフトを 見てね。「シフト・ダンジョン」を 押そう。', done: 'staffTab' },
+        { el: () => document.querySelector('#tab-staff table.work'), tab: 'staff', text: '朝・昼・夜に だれが 入るか、レジ・品出し・検品・調理の どこを まかせるか きめるよ。赤い 数字は 足りない しるし。足りない ときは 持ち場を かえて みてね (はじめは この ままでも 遊べるよ)。', next: true },
+        { el: () => $('go-button'), text: '準備 できたら「1週間 営業する」で 営業 スタート！ 棚を タップすると その 棚の ようすが 見られるよ。', done: 'go' }
+    ];
+    let tut = -1;
+    function tutStart() { tut = 0; tutShow(); }
+    function tutShow() {
+        document.querySelectorAll('.tut-glow').forEach(x => x.classList.remove('tut-glow'));
+        $('tut').hidden = tut < 0;
+        if (tut < 0 || !s) return;
+        const st = TUT[tut];
+        if (st.tab) { const b = document.querySelector(`.tabs button[data-tab="${st.tab}"]`); if (b && tab !== st.tab) b.click(); }
+        const el = st.el();
+        if (el) { el.classList.add('tut-glow'); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+        $('tut').innerHTML = `${img('furukawa', 40)}<p><b>ふるカワの 案内 (${tut + 1}/${TUT.length})</b>${st.text}</p><span class="tut-btns">${st.next ? '<button class="mini go" data-tut="next">わかった ▶</button>' : ''}<button class="mini" data-tut="end">案内を やめる</button></span>`;
+    }
+    function tutDone(kind) {
+        if (tut < 0 || TUT[tut].done !== kind) return;
+        tut++;
+        if (tut >= TUT.length) { tut = -1; if (s) s.flags.tutDone = true; }
+        tutShow();
+    }
+    $('tut').addEventListener('click', e => {
+        const b = e.target.closest('[data-tut]');
+        if (!b) return;
+        if (b.dataset.tut === 'next') { tut++; if (tut >= TUT.length) tut = -1; }
+        else { tut = -1; if (s) s.flags.tutDone = true; save(); }
+        tutShow();
+    });
+    // 遊び方
+    $('howto-button').addEventListener('click', () => {
+        $('modal-box').innerHTML = `<h2>遊び方</h2>${document.querySelector('#title .howto ul').outerHTML}
+            <ul class="howto-more">
+                <li>発注・値段: 商品ごとに 毎朝 とどく 数と 売り値を きめる。仕入れ値は 週ごとに 変わるので「1こ の もうけ」を 見て 売り値を 見なおそう。売り値の ボタンで「定価・ちょい安・ちょい高・もうけ ○%」。</li>
+                <li>営業: 7 日ぶんを 早送りで 見せる。お店の 絵の 棚を タップすると 調べられる。止めた ところで 値段・すぐ品出し・緊急発注・シフトの 入れ替え・調理・呼びこみが できる。</li>
+                <li>棚の ! は 品切れ・品切れ しそう・期限が 近い しるし。</li>
+            </ul>
+            <div class="title-buttons"><button id="tut-again" class="big sub">案内を もう一度 見る</button><button id="howto-close" class="big">とじる</button></div>`;
+        $('modal').hidden = false;
+        $('howto-close').addEventListener('click', () => { $('modal').hidden = true; });
+        $('tut-again').addEventListener('click', () => { $('modal').hidden = true; if (!running) tutStart(); });
+    });
+
     // ----- 音の 設定 (音量・ミュート) -----
     $('snd-vol').value = Math.round(Sound.vol * 100);
     $('snd-mute').checked = Sound.mute;
@@ -808,6 +859,7 @@
             resumeWeek();
             if (params.get('inspect')) setTimeout(() => openInspect(params.get('inspect')), 300);
         } else if (params.get('inspect')) setTimeout(() => openInspect(params.get('inspect')), 300);
+        if (params.get('tut')) setTimeout(() => { tutStart(); for (let i = 1; i < Number(params.get('tut')); i++) { tut++; } tutShow(); }, 300);
         if (params.get('end')) { s.over = params.get('end'); ending(); if (params.get('story') !== '1') { storyIdx = 99; storyStep(); } }
         say('furukawa', '画面の 確認用の はじまり だよ。');
     } else if (params.get('story') === '1') $('new-button').click();

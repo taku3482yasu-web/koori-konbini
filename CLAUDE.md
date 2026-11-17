@@ -22,6 +22,7 @@
 - 営業 (2026-11-17 ユーザー決定: 指示書 10-2 案B): `beginWeek` → `runSlot` (21 コマ。朝の 入荷は `startDay`、夜の 期限は `endDay`) → `finishWeek`。`runDay` = 1 日、`runWeek` = ぜんぶ。途中は `s.wk` (セーブすると その コマから)。営業中の 手は `midStock`・`midRush`・`midShift`・`midCook`・`midCallout` (`midweek` の 数値)。`shelfInfo` = 棚を 調べる、`alerts` = 早送りが 止まる わけ。ともいしの 来る 日は `beginWeek` で きまる (`tomoDay`)。自動プレイの `midweek` は すぐ品出し だけ (呼びこみ・緊急発注は 評判が 下がる ことが 多い)。
 - 画面 (2026-11-17 ユーザー指定): 営業の 早送りは ui.js の `playWeek` (1 日 `playback.dayMs`)。`#live` パネル・棚を 調べる `#inspect`。設定は localStorage `koori-konbini-pref` (autoStop・skipAll)。scene.js は 床の マス (`cells`) に 棚・施設、`playSlot` で コマの 客、`hit` で タップ。画面確認: `&live=8` (8 コマ 進めた ところ)・`&inspect=onigiri`。
 - 音 (2026-11-17 ユーザー指定): `js/audio.js` の `Sound` (`play(場面)`・`se(名前)`)。BGM は `sounds/bgm/<day|night|report|bank|ending>.mp3` が あれば それ (ない ときは 合成)。設定は localStorage `koori-konbini-sound`。ユーザーの 効果音ファイルは GitHub に 上げない。
+- 案内 (2026-11-17 ユーザー指定): ui.js の `TUT` (1 週目に ふるカワが 順に)・`#tut`・「❓ 遊び方」(`howto-button`)。画面確認: `&tut=1`。
 - 公開: https://taku3482yasu-web.github.io/koori-konbini/ (main に push すると 公開)。ゲーム大全に No.08 で ならべた。テストが 通ったら 聞かずに commit して push する (2026-11-17 ユーザー指定)。
 - コミットの 前に `.githooks/pre-commit` が テストする (`git config core.hooksPath .githooks`)。
 - 画面の 確認: `index.html?play=onga&weeks=6` (地域を えらんで 6 週 すすめた ところ)・`&tab=staff|shop|partner|bank|area|rank`・`&report=1` (1 週 営業して まとめ)・`&end=clear|normal|bad`・`?story=1` (オープニング)・`?region=1` (出店地)。
