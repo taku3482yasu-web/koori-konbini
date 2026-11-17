@@ -11,7 +11,14 @@
         slotNames: ['朝', '昼', '夜'],
 
         start: { cash: 400000, rep: 40, regulars: 0 },
-        royalty: 0.08,             // ★ 本部への 支払い (売上の 割合。Mr.SASAKI は 本部の スーパーバイザー)
+        // 難易度 (2026-11-17 ユーザー指定: 難易度を えらべる ように) ★ 数値は Claude
+        // rival = ライバル店の 売上の 倍率、cash = はじめの 手持ち、rate = おにおにバンクの 利息 (月)、traffic = 客の 倍率
+        difficulties: {
+            easy: { name: 'やさしい', text: 'はじめての 人に。ライバルが 弱く、手持ちが 多く、利息が 安い', rival: 0.95, cash: 600000, rate: 0.01, traffic: 1.02 },
+            normal: { name: 'ふつう', text: '発注と 持ち場を 工夫すれば 1 位に とどく', rival: 1.06, cash: 400000, rate: 0.02, traffic: 1 },
+            hard: { name: 'むずかしい', text: 'ライバルが 強く、手持ちが 少なく、利息が 高い', rival: 1.12, cash: 250000, rate: 0.03, traffic: 0.98 }
+        },
+        royalty: 0.04,             // ★ 本部への 支払い (売上の 割合。Mr.SASAKI は 本部の スーパーバイザー)
 
         // ----- おにおにバンク (企画書: 借金 100 万円・最初の 1 か月は つけ・毎月 返す・利息・追加の 借金は 利息が 上がる) -----
         bank: {
@@ -44,7 +51,7 @@
             },
             {
                 id: 'kokura', name: '小倉駅前', icon: '🚉', text: 'サラリーマンが 多い。高くても 買って くれるが 家賃が 高い。駐車場は 高い',
-                base: { student: 50, worker: 190, family: 25, driver: 25 }, line: 1.15, rent: 80000,
+                base: { student: 50, worker: 190, family: 25, driver: 25 }, line: 1.1, rent: 60000,
                 local: { name: '小倉の 焼うどん', icon: '🍜' },
                 pref: { coffee: 1.3, bento: 1.2, bread: 1.1, snack: 0.8, ice: 0.85 }, parkingMul: 3
             }

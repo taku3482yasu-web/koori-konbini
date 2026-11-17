@@ -280,3 +280,7 @@ table.work { width: 100%; border-collapse: collapse; font-size: 13px; margin-bot
 .workline span { background: var(--bg2); border-radius: 8px; padding: 4px 8px; }
 .workline em { font-style: normal; }
 @media (max-width: 560px) { .orders th:nth-child(5), .orders td.stockq { display: none; } }
+.diff-box { margin: -6px 0 18px; color: var(--sub); }
+.diff-row { display: flex; gap: 6px; justify-content: center; margin: 6px 0; }
+.diff-row .chip { font: inherit; font-size: 15px; padding: 7px 16px; color: var(--ink); }
+.diff-box small { display: block; font-size: 12px; }

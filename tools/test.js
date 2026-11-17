@@ -84,6 +84,13 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     const b = fresh(); const r0 = b.rate; Sim.borrow(b);
     check('追加で 借りると 利息が 上がる', b.rate > r0 && b.debt === C.bank.debt + C.bank.borrow);
 }
+// 難易度
+{
+    const e = Sim.newGame('t', 1, 'onga', 'easy'), h = Sim.newGame('t', 1, 'onga', 'hard'), x = Sim.newGame('t', 1, 'onga');
+    check('難易度で はじめの 手持ちと 利息が かわる', e.cash > x.cash && x.cash > h.cash && e.rate < h.rate);
+    check('難易度で ライバルの 強さが かわる', Sim.ranking(e).find(r => !r.me).score < Sim.ranking(h).find(r => !r.me).score);
+    check('難易度を 指定しないと ふつう', x.difficulty === 'normal');
+}
 // 発注・倉庫・持ち場 (2026-11-17 ユーザー指定)
 {
     const s = fresh();
@@ -155,25 +162,37 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     const m = fresh(); m.cash = 1e7; m.regulars = 100;
     check('移転できる (常連は へる)', Sim.relocate(m, 'kokura') && m.region === 'kokura' && m.regulars === 20);
 }
-// バランス (自動プレイ)
+// バランス (自動プレイ・難易度ごと)
 {
-    const N = 20, res = {};
-    for (const name of ['idle', 'normal', 'good', 'reckless']) {
-        const r = { clear: 0, normal: 0, bad: 0, n: 0, weeks: [] };
-        for (const region of C.regions.map(x => x.id)) for (let i = 1; i <= N; i++) {
-            const { s } = St.play(St[name], i * 7919, region);
-            r[s.over]++; r.n++;
-            if (s.over === 'clear') r.weeks.push(s.week);
+    const N = 20, all = {};
+    for (const diff of Object.keys(C.difficulties)) {
+        const res = all[diff] = {};
+        for (const name of diff === 'normal' ? ['idle', 'normal', 'good', 'reckless'] : ['normal', 'good']) {
+            const r = { clear: 0, normal: 0, bad: 0, n: 0, weeks: [], regions: {} };
+            for (const region of C.regions.map(x => x.id)) for (let i = 1; i <= N; i++) {
+                const { s } = St.play(St[name], i * 7919, region, diff);
+                r[s.over]++; r.n++;
+                if (s.over === 'clear') { r.weeks.push(s.week); r.regions[region] = (r.regions[region] || 0) + 1; }
+            }
+            res[name] = r;
         }
-        res[name] = r;
+        console.log(`[${C.difficulties[diff].name}] ` + Object.entries(res).map(([k, v]) => `${k}: クリア ${v.clear}/${v.n}${v.weeks.length ? ` (平均 第${Math.round(v.weeks.reduce((a, b) => a + b, 0) / v.weeks.length)}週)` : ''} 返済 ${v.normal} 返せず ${v.bad}`).join(' / '));
     }
-    console.log(Object.entries(res).map(([k, v]) => `${k}: クリア ${v.clear}/${v.n}${v.weeks.length ? ` (平均 第${Math.round(v.weeks.reduce((a, b) => a + b, 0) / v.weeks.length)}週)` : ''} 借金を 返した ${v.normal} 返せない ${v.bad}`).join('\n'));
-    check('何も しないと クリア できない', res.idle.clear === 0);
-    check('目安 だけでは クリアは むずかしい (1 割 以下)', res.normal.clear <= res.normal.n * 0.1, res.normal.clear);
-    check('目安 だけでも たいてい 借金は 返せる (7 割 以上)', res.normal.normal >= res.normal.n * 0.7, res.normal.normal);
-    check('工夫すれば クリア できる (3 割 以上)', res.good.clear >= res.good.n * 0.3, res.good.clear);
-    check('クリアは 後半 (平均 第 20 週 より あと)', res.good.weeks.reduce((a, b) => a + b, 0) / res.good.weeks.length > 20);
-    check('むちゃな 借金は 返せない', res.reckless.bad >= res.reckless.n * 0.8, res.reckless.bad);
+    const avgW = r => r.weeks.reduce((a, b) => a + b, 0) / Math.max(1, r.weeks.length);
+    const n = all.normal, e = all.easy, h = all.hard;
+    // ふつう
+    check('ふつう: 何も しないと クリア できない', n.idle.clear === 0 && n.idle.bad === n.idle.n);
+    check('ふつう: 目安 だけでは クリアは むずかしい (1 割 以下)', n.normal.clear <= n.normal.n * 0.1, n.normal.clear);
+    check('ふつう: 目安 だけでも 借金は 返せる (9 割 以上)', n.normal.normal + n.normal.clear >= n.normal.n * 0.9, n.normal.normal);
+    check('ふつう: 工夫すれば クリア できる (3〜6 割)', n.good.clear >= n.good.n * 0.3 && n.good.clear <= n.good.n * 0.6, n.good.clear);
+    check('ふつう: クリアは 後半 (平均 第 24 週 より あと)', avgW(n.good) > 24, avgW(n.good));
+    check('ふつう: どの 地域でも 工夫すれば クリア できる', C.regions.every(r => (n.good.regions[r.id] || 0) >= 3), JSON.stringify(n.good.regions));
+    check('ふつう: むちゃな 借金は 返せない', n.reckless.bad >= n.reckless.n * 0.8, n.reckless.bad);
+    // やさしい・むずかしい
+    check('やさしい: 目安 だけでも ときどき クリア できる', e.normal.clear >= e.normal.n * 0.2, e.normal.clear);
+    check('やさしい: 工夫すれば たいてい クリア (6 割 以上)', e.good.clear >= e.good.n * 0.6, e.good.clear);
+    check('むずかしい: 目安 だけでは クリア できない', h.normal.clear === 0, h.normal.clear);
+    check('むずかしい: 工夫しても ふつうより クリアしにくい', h.good.clear < n.good.clear && h.good.clear > 0, h.good.clear);
 }
 console.log(`${ok} / ${ok + ng} 成功`);
 process.exit(ng ? 1 : 0);

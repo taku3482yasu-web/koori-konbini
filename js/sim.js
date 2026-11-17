@@ -37,11 +37,14 @@
     function bestRole(id) { const st = staffDef(id).st; return Object.keys(C.roles).sort((a, b) => st[C.roles[b].stat] - st[C.roles[a].stat])[0]; }
     function newMember(id) { return { id, slots: [1, 1, 0], role: bestRole(id), job: 'shop', dungeon: null, back: 0, mood: C.mood.start, tired: false }; }
 
-    function newGame(name, seed, region) {
+    const diffOf = s => C.difficulties[s.difficulty] || C.difficulties.normal;
+    function newGame(name, seed, region, difficulty) {
+        const df = C.difficulties[difficulty] || C.difficulties.normal;
         const s = {
             version: 2, name: name || 'こおりマート', seed: seed >>> 0, rs: seed | 0,
             region: region || C.regions[0].id, week: 0, months: 0,
-            cash: C.start.cash, debt: C.bank.debt, rate: C.bank.rate, borrowed: 0, occupy: 0,
+            difficulty: C.difficulties[difficulty] ? difficulty : 'normal',
+            cash: df.cash, debt: C.bank.debt, rate: df.rate, borrowed: 0, occupy: 0,
             rep: C.start.rep, regulars: C.start.regulars,
             prices: {}, orders: {}, stock: {}, ware: {}, back: {}, wareLv: 0, markdown: 0, kids: false,
             facilities: [], paid: {},
@@ -143,7 +146,7 @@
         return out;
     }
     function baseMult(s, info) {
-        return C.seasonTraffic[info.mi] * (info.event ? info.event.traffic : 1) * repF(s.rep)
+        return C.seasonTraffic[info.mi] * (info.event ? info.event.traffic : 1) * repF(s.rep) * diffOf(s).traffic
             * (s.effects.maneki ? C.items.maneki.traffic : 1)
             * (partnerPower(s, 'ad') ? 1 + (partner('ad').traffic - 1) * partnerPower(s, 'ad') : 1)
             * (s.occupy ? C.bank.occupyTraffic : 1);
@@ -611,7 +614,7 @@
         for (let i = 0; i < C.rivals.length; i++) {
             const cr = C.rivals[i], rv = s.rivals[i];
             const ev = info.event ? info.event.traffic : 1; // ライバルも 行事で 客が ふえる
-            rv.sales.push(Math.round(cr.weekly * (1 + cr.grow * s.week / C.weeks) * C.seasonTraffic[info.mi] * ev * (0.96 + rand(s) * 0.08)));
+            rv.sales.push(Math.round(cr.weekly * diffOf(s).rival * (1 + cr.grow * s.week / C.weeks) * C.seasonTraffic[info.mi] * ev * (0.96 + rand(s) * 0.08)));
             if (rv.sales.length > C.rankWeeks) rv.sales.shift();
         }
 
@@ -669,7 +672,7 @@
         s.score = Math.round(avg(mine) / 10000 + s.rep * 0.5);
         s.rivals.forEach((rv, i) => {
             const cr = C.rivals[i];
-            const sales = rv.sales.length ? rv.sales : [cr.weekly];
+            const sales = rv.sales.length ? rv.sales : [cr.weekly * diffOf(s).rival];
             rv.score = Math.round(avg(sales) / 10000 + cr.rep * 0.5);
         });
     }
@@ -678,7 +681,7 @@
     }
 
     const Sim = {
-        C, rand, dateOf, weekInfo, monthEnds, newGame, available, capOf, stats, slotCap, rolePower, setRole, bestRole, wareCap, wareUse, expandWare, slotWage, wageOf, wages, upkeep, upkeepOf, recruit, priceF, ratioOf, productFactor,
+        C, diffOf, rand, dateOf, weekInfo, monthEnds, newGame, available, capOf, stats, slotCap, rolePower, setRole, bestRole, wareCap, wareUse, expandWare, slotWage, wageOf, wages, upkeep, upkeepOf, recruit, priceF, ratioOf, productFactor,
         estTraffic, estSlots, suggest, dailyNeed, stockOf, prepareWeek, facCost, buyFacility, removeFacility, hire, fire, toggleSlot, sendDungeon, recall,
         matsLeft, craftable, addCraft, useItem, setPartner, partnerFee, bookEvent, repay, borrow, relocate, knownPref, runWeek, ranking,
         product, facility, staffDef, recipe, partner, regionOf, trioOn, inShop, hasFac, SEGS

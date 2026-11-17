@@ -8,7 +8,7 @@
     const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const img = (id, size = 36) => (id ? `<img class="face" src="${Art.icon(id, size)}" alt="" width="${size}" height="${size}">` : '<span class="face blank">？</span>');
     const params = new URLSearchParams(location.search);
-    let s = null, running = false, skip = false, lastReport = null;
+    let s = null, running = false, skip = false, lastReport = null, difficulty = 'normal';
 
     function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch (e) { /* なし */ } }
     function load() { try { const v = JSON.parse(localStorage.getItem(SAVE_KEY)); return v && v.version === 2 && !v.over ? v : null; } catch (e) { return null; } }
@@ -20,11 +20,18 @@
         show('title');
         $('store-name').value = 'こおりマート';
         $('continue-button').hidden = !load();
+        renderDiff();
         const g = $('title-art').getContext('2d');
         g.clearRect(0, 0, 320, 140);
         Art.draw(g, 'koori', 160, 130, { height: 96 });
         [['furukawa', 40], ['onioni', 95], ['yasu', 225], ['dake', 280]].forEach(([id, x], i) => Art.draw(g, id, x, 130, { height: 56, flip: i < 2 }));
     }
+    // 難易度 (2026-11-17 ユーザー指定)
+    function renderDiff() {
+        $('diff-row').innerHTML = Object.entries(C.difficulties).map(([k, d]) => `<button class="chip${difficulty === k ? ' on' : ''}" data-diff="${k}">${d.name}</button>`).join('');
+        $('diff-text').textContent = C.difficulties[difficulty].text;
+    }
+    $('diff-row').addEventListener('click', e => { const b = e.target.closest('[data-diff]'); if (b) { difficulty = b.dataset.diff; renderDiff(); } });
     $('new-button').addEventListener('click', () => story(OPENING, regionSelect));
     $('continue-button').addEventListener('click', () => { s = load(); if (s) { start(); say('furukawa', 'つづきから だね。今週も たのむよ！'); } });
 
@@ -71,7 +78,7 @@
         const b = e.target.closest('[data-region]');
         if (!b) return;
         const seed = params.get('seed') ? Number(params.get('seed')) : Math.floor(Math.random() * 2 ** 31);
-        s = Sim.newGame($('store-name').value.trim() || 'こおりマート', seed, b.dataset.region);
+        s = Sim.newGame($('store-name').value.trim() || 'こおりマート', seed, b.dataset.region, difficulty);
         start();
         say('furukawa', `${Sim.regionOf(s).name}に 開店！ 店は からっぽ。商品は 発注しないと とどかないよ。まずは 発注 (「ぜんぶ 目安に」でも いい) と シフト・持ち場を きめて「営業する」だ。`);
     });
@@ -89,7 +96,7 @@
     function render() {
         const info = Sim.weekInfo(s.week);
         $('when-week').textContent = `第 ${s.week + 1} 週`;
-        $('when-date').textContent = `${info.start.month}/${info.start.date}〜${info.end.month}/${info.end.date}`;
+        $('when-date').textContent = `${info.start.month}/${info.start.date}〜${info.end.month}/${info.end.date}・${Sim.diffOf(s).name}`;
         $('stat-cash').textContent = man(s.cash);
         $('stat-cash').className = s.cash < 0 ? 'bad' : '';
         $('stat-debt').textContent = s.debt > 0 ? man(s.debt) : 'なし';
@@ -440,7 +447,7 @@
             const list = Sim.ranking(s);
             $('modal-box').innerHTML = `<h2 class="end-title">${e.head}</h2><canvas id="end-art" width="320" height="120"></canvas>
                 <div class="sum-grid">
-                    <div><span>週</span><b>第 ${s.week} 週</b></div>
+                    <div><span>週 (難易度)</span><b>第 ${s.week} 週 <small>${Sim.diffOf(s).name}</small></b></div>
                     <div><span>順位</span><b>${list.findIndex(x => x.me) + 1} 位</b></div>
                     <div><span>借金</span><b class="${s.debt > 0 ? 'bad' : 'good'}">${s.debt > 0 ? man(s.debt) : 'なし'}</b></div>
                     <div><span>資金</span><b>${man(s.cash)}</b></div>
@@ -463,7 +470,7 @@
     // 画面の 確認用: ?play=kokura (すぐ はじめる)・&tab=staff・&weeks=10 (自動で すすめる)・&report=1・&end=clear|normal|bad・&story=1
     const play = params.get('play');
     if (play) {
-        s = Sim.newGame('こおりマート', Number(params.get('seed') || 5), C.regions.some(r => r.id === play) ? play : 'tsugaku');
+        s = Sim.newGame('こおりマート', Number(params.get('seed') || 5), C.regions.some(r => r.id === play) ? play : 'tsugaku', params.get('diff') || 'normal');
         const weeks = Number(params.get('weeks') || 0);
         for (let i = 0; i < weeks && !s.over; i++) {
             if (i === 1) { Sim.buyFacility(s, 'fryer'); s.applicants = ['tamu', 'dake']; Sim.hire(s, 'tamu'); Sim.hire(s, 'dake'); }

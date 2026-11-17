@@ -63,7 +63,11 @@ const PLAN = {
 };
 function good(s) {
     const r = Sim.regionOf(s);
-    for (const id of PLAN[r.id]) if (s.cash > Sim.facCost(s, id) + 250000) Sim.buyFacility(s, id);
+    // 手もとに のこす お金 = 1 週の 出費 + 月末の 返済 (これを 切る 買い物は しない)
+    const reserve = Sim.wages(s) + r.rent + Sim.upkeep(s) + (s.debt > 0 ? C.bank.pay + s.debt * s.rate : 0) + 100000;
+    const recent = s.history.filter(h => !h.moved).slice(-2);
+    const lastP = recent.length ? recent.reduce((a, h) => a + h.profit, 0) / recent.length : 0;
+    for (const id of PLAN[r.id]) if (s.cash > Sim.facCost(s, id) + reserve && (lastP > 0 || !s.facilities.length)) Sim.buyFacility(s, id);
     // 値段: 高いと 買わない ラインの すこし 下
     for (const p of C.products) s.prices[p.id] = Math.round(p.price * Math.min(1.1, r.line) / 10) * 10;
     // 予報で 見つもって 発注
@@ -89,8 +93,7 @@ function good(s) {
     // スタッフ: 3 人 そろえる → 足りなければ 接客の 強い 人
     const want = ['tamu', 'dake', 'kotani', 'yamamou', 'ueno'];
     const need = Sim.estSlots(s);
-    const lastP = s.history.length ? s.history[s.history.length - 1].profit : 0;
-    staffUp(s, s.cash > 200000 && (s.staff.length < 3 || ([0, 1, 2].some(t => Sim.slotCap(s, t) < need[t] * 1.05) && lastP > 0)), want);
+    staffUp(s, (s.staff.length < 3 && s.cash > 150000) || s.cash > reserve && (s.staff.length < 3 || ([0, 1, 2].some(t => Sim.slotCap(s, t) < need[t] * 1.05) && lastP > 0)), want);
     // ダンジョン: 探索の 得意な 人を 1 人 (やる気が ある とき)
     const diver = s.staff.find(m => ['dake', 'ueno', 'yasu'].includes(m.id) && m.job === 'shop' && m.mood > 45 && !m.tired);
     if (diver && s.staff.length >= 4) Sim.sendDungeon(s, diver.id, s.week > 20 ? 'moon' : 'coast');
@@ -103,8 +106,8 @@ function good(s) {
     // 連携と 返済
     Sim.setPartner(s, 'ad', s.cash > 600000 && s.facilities.length >= 3 && lastP > 100000);
     Sim.setPartner(s, 'farm', s.cash > 400000 && lastP > 50000);
-    if (info.event && s.cash > 500000) Sim.bookEvent(s, 5);
-    if (s.cash > 900000) Sim.repay(s, s.cash - 700000);
+    if (info.event && s.cash > reserve + 300000) Sim.bookEvent(s, 5);
+    if (s.cash > reserve + 500000) Sim.repay(s, s.cash - reserve - 300000);
 }
 
 // むちゃ: 借りられる だけ 借りて ぜんぶ 買う・やとう
@@ -118,8 +121,8 @@ function reckless(s) {
     for (const p of C.products) s.prices[p.id] = Math.round(p.price * 0.7 / 10) * 10;
 }
 
-function play(strategy, seed, region) {
-    const s = Sim.newGame('テスト', seed, region);
+function play(strategy, seed, region, diff) {
+    const s = Sim.newGame('テスト', seed, region, diff);
     let reports = 0;
     while (!s.over) { strategy(s); Sim.runWeek(s); reports++; }
     const rank = Sim.ranking(s).findIndex(x => x.me) + 1;
