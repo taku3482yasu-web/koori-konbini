@@ -13,6 +13,12 @@
     const randInt = (s, a, b) => a + Math.floor(rand(s) * (b - a + 1));
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const product = id => C.products.find(p => p.id === id);
+    // 種類 (SKU)。種類を もたない グループは グループと 同じ id (2026-11-17 ユーザー指定: 指示書 9 章)
+    const SKU = Object.fromEntries(C.skus.map(k => [k.id, k]));
+    const sku = id => SKU[id];
+    const groupOf = id => (SKU[id] ? SKU[id].group : id);
+    const skusOf = gid => C.skus.filter(k => k.group === gid);
+    const hasVariety = gid => !!C.varieties[gid];
     const facility = id => C.facilities.find(f => f.id === id);
     const staffDef = id => C.staff.find(x => x.id === id);
     const recipe = id => C.recipes.find(r => r.id === id);
@@ -58,13 +64,14 @@
             rivals: C.rivals.map(r => ({ name: r.name, owner: r.owner, sales: [], score: 0 }))
         };
         for (const p of C.partners) s.partners[p.id] = { on: false, trust: 0, taken: 0 };
-        for (const p of C.products) { s.prices[p.id] = p.price; s.stock[p.id] = []; s.ware[p.id] = []; s.back[p.id] = []; }
+        for (const k of C.skus) { s.prices[k.id] = k.price; s.stock[k.id] = []; s.ware[k.id] = []; s.back[k.id] = []; }
         s.shelves = { ...C.startShelves };
         s.everHired = C.startStaff.slice();
         s.metRare = [];
+        s.skuVer = 1; s.launched = []; s.offer = null; s.newUntil = {}; s.boom = null; s.soldSkus = [];
         prepareWeek(s);
         // 発注しないと 何も とどかない (2026-11-17 ユーザー指定)。はじめは 発注 0・在庫 0
-        for (const p of C.products) s.orders[p.id] = 0;
+        for (const k of C.skus) s.orders[k.id] = 0;
         updateScores(s);
         return s;
     }
@@ -73,18 +80,54 @@
     // 売れる 商品 = 施設が ある (コーヒー・調理) か、棚が 1 台 以上 ある
     const shelfUnits = (s, id) => (s.shelves ? s.shelves[id] || 0 : C.startShelves[id] || 0);
     const needsShelf = p => !p.self && !p.cook;
-    const available = (s, id) => { const p = product(id); return (!p.needs || hasFac(s, p.needs)) && (!needsShelf(p) || shelfUnits(s, id) > 0); };
+    const groupAvail = (s, gid) => { const p = product(gid); return (!p.needs || hasFac(s, p.needs)) && (!needsShelf(p) || shelfUnits(s, gid) > 0); };
+    const monthNow = s => weekInfo(s.week).start.month;
+    // 種類が いま 発注できるか (期間限定は その 月 だけ・新商品は 置くと きめてから)
+    function skuOn(s, k, month = monthNow(s)) {
+        if (!groupAvail(s, k.group)) return false;
+        if (k.months && !k.months.includes(month)) return false;
+        if (k.launch && !(s.launched || []).includes(k.id)) return false;
+        return true;
+    }
+    // id は 種類 でも グループ でも いい
+    const available = (s, id) => (SKU[id] ? skuOn(s, SKU[id]) : groupAvail(s, id));
+    const skusOn = s => C.skus.filter(k => skuOn(s, k));
+    const groupSkus = (s, gid) => skusOf(gid).filter(k => skuOn(s, k));
+    // 種類の 人気 (グループの 客を 種類に 分ける 重み): 人気 × 季節 × 地域 × 新発売 × ブーム
+    function weightOf(s, k, month = monthNow(s)) {
+        let w = k.pop || 1;
+        if (k.season && k.season.months.includes(month)) w *= k.season.mul;
+        if (k.pref && k.pref[s.region]) w *= k.pref[s.region];
+        if (s.newUntil && s.newUntil[k.id] > s.week) w *= C.launch.newMul;
+        if (s.boom && s.boom.id === k.id && s.boom.until > s.week) w *= C.boom.mul;
+        return w;
+    }
+    // グループの 客の うち この 種類を ほしい 割合
+    function shareOf(s, id) {
+        const k = SKU[id];
+        if (!k || k.single) return 1;
+        const all = groupSkus(s, k.group);
+        const tot = all.reduce((a, x) => a + weightOf(s, x), 0);
+        return tot ? (all.includes(k) ? weightOf(s, k) / tot : 0) : 0;
+    }
+    // 棚に ならべられる 種類の 数 (棚 1 台に varietyPerShelf)
+    const facingsOf = (s, gid) => C.varietyPerShelf * Math.max(1, needsShelf(product(gid)) ? shelfUnits(s, gid) : 1);
+    // おまかせで ならべる 種類 (人気の じゅんに 棚に のる ぶん)
+    const pickSkus = (s, gid) => groupSkus(s, gid).sort((a, b) => weightOf(s, b) - weightOf(s, a)).slice(0, facingsOf(s, gid));
     const floorUsed = s => C.products.reduce((a, p) => a + shelfUnits(s, p.id), 0) + s.facilities.length;
     // 倉庫 (2026-11-17 ユーザー指定: 倉庫に 入れて おける)
     const wareCap = s => C.warehouse.cap + C.warehouse.add * s.wareLv;
-    function wareUse(s) { return C.products.reduce((a, p) => a + [...s.back[p.id], ...s.ware[p.id]].reduce((x, b) => x + b.q, 0), 0); }
+    function wareUse(s) { return C.skus.reduce((a, k) => a + [...(s.back[k.id] || []), ...(s.ware[k.id] || [])].reduce((x, b) => x + b.q, 0), 0); }
     function expandWare(s) {
         if (s.wareLv >= C.warehouse.max || s.cash < C.warehouse.cost) return false;
         s.cash -= C.warehouse.cost;
         s.wareLv++;
         return true;
     }
-    const capOf = (s, p) => Math.round(p.cap * (needsShelf(p) ? shelfUnits(s, p.id) : 1) * s.facilities.reduce((m, f) => m * (facility(f).capMul && facility(f).capMul[p.id] || 1), 1));
+    // 棚に ならべられる 数 (グループ ぶん。種類は その 中で 分けあう)
+    const capOf = (s, p) => { const g = product(p.group || p.id); return Math.round(g.cap * (needsShelf(g) ? shelfUnits(s, g.id) : 1)); };
+    // グループの 棚に ある 数・ロット (scene・画面用)
+    const groupStock = (s, gid) => skusOf(gid).reduce((a, k) => a.concat(s.stock[k.id] || []), []);
 
     // ----- スタッフ -----
     const inShop = s => s.staff.filter(m => m.job === 'shop');
@@ -118,7 +161,7 @@
     const wages = s => s.staff.reduce((a, m) => a + wageOf(m), 0);
 
     // ----- 値段と 客 -----
-    const ratioOf = (s, id) => s.prices[id] / product(id).price;
+    const ratioOf = (s, id) => s.prices[id] / sku(id).price;
     function priceF(seg, ratio, line) {
         const sense = C.segments[seg].sense;
         return ratio <= line ? 1 + sense * 0.6 * (line - ratio) : Math.exp(-sense * (ratio - line) * 2.2);
@@ -130,6 +173,7 @@
 
     // 気温・天気・行事・設備で かわる 売れやすさ (値段と 客層 以外)
     function productFactor(s, p, temp, weather, event) {
+        p = product(p.group || p.id);
         let f = 1;
         if (p.temp) f *= Math.max(0.2, p.temp[0] + p.temp[1] * temp);
         if (p.iceCurve) f *= Math.max(0.1, 1 + (temp - 22) * 0.12) * (weather === 'rain' ? 0.7 : 1);
@@ -176,21 +220,39 @@
     // 1 日に 売れそうな 数 (店に 入れた 客の ぶん。レジで 帰った 客は 入れない。入れると 倉庫に たまる)
     function dailyNeed(s, id) {
         if (!available(s, id)) return 0;
+        const k = sku(id), gid = k.group;
+        // 種類 (2026-11-17): 人気の じゅんに 棚に のる 種類は、グループ ぜんたいの 客を 人気で 分ける (先週の 品切れで ふらつかない)
+        if (!k.single) {
+            const picked = pickSkus(s, gid);
+            if (picked.includes(k)) return Math.round(groupNeed(s, gid) * weightOf(s, k) / picked.reduce((a, x) => a + weightOf(s, x), 0));
+        }
         const h = s.history.filter(x => !x.moved);
         const lastH = h.length ? h[h.length - 1] : null, last = lastH && lastH.products[id];
-        // 行事の 週の ぶんは ならして、今週の 行事を かける (どんたくの つぎの 週に 多く 入れすぎない)
-        const evMul = w => { const e = weekInfo(w).event; return e ? e.traffic * (e.boost && e.boost[id] || 1) : 1; };
-        if (last && last.open) return Math.round((last.need !== undefined ? last.need : last.demand) / last.open / evMul(lastH.week) * evMul(s.week));
-        const p = product(id), info = weekInfo(s.week), r = regionOf(s);
+        if (last && last.open) return Math.round(((last.need !== undefined ? last.need : last.demand) + (last.subWant || 0)) / last.open / evMul(gid, lastH.week) * evMul(gid, s.week));
+        return Math.round(estNeed(s, gid, id) * (k.single ? 1 : shareOf(s, id)));
+    }
+    // 行事の 週の ぶんは ならして、今週の 行事を かける (どんたくの つぎの 週に 多く 入れすぎない)
+    const evMul = (gid, w) => { const e = weekInfo(w).event; return e ? e.traffic * (e.boost && e.boost[gid] || 1) : 1; };
+    // まだ 売って いない グループの 1 日の 見こみ (値段は id の 種類の 値段で)
+    function estNeed(s, gid, id) {
+        const p = product(gid), info = weekInfo(s.week), r = regionOf(s);
         const t = segTraffic(s, info, baseMult(s, info));
         let d = 0;
-        for (const g of SEGS) d += t[g] * C.segments[g].rate[id] * priceF(g, ratioOf(s, id), r.line);
-        return Math.round(d * productFactor(s, p, C.temp[info.mi], 'sun', info.event));
+        for (const g of SEGS) d += t[g] * C.segments[g].rate[gid] * priceF(g, id ? ratioOf(s, id) : 1, r.line);
+        return d * productFactor(s, p, C.temp[info.mi], 'sun', info.event);
+    }
+    // グループ ぜんたいの 1 日の 客 (どの 種類が ほしいかは 問わない)
+    function groupNeed(s, gid) {
+        const h = s.history.filter(x => !x.moved);
+        const lastH = h.length ? h[h.length - 1] : null;
+        const rows = lastH ? skusOf(gid).map(k => lastH.products[k.id]).filter(x => x && x.open) : [];
+        if (rows.length) return rows.reduce((a, x) => a + (x.need || 0), 0) / rows[0].open / evMul(gid, lastH.week) * evMul(gid, s.week);
+        return estNeed(s, gid);
     }
     const stockOf = (s, id) => ['back', 'ware', 'stock'].reduce((a, k) => a + (s[k][id] || []).reduce((x, b) => x + b.q, 0), 0);
     // 「目安」 = 1 日に 売れそうな 数。日持ちする 商品は 今 ある 在庫も 見る (倉庫に keepDays 日ぶん のこる ように)
     function suggest(s, id) {
-        const d = dailyNeed(s, id), p = product(id);
+        const d = dailyNeed(s, id), p = sku(id);
         if (p.shelf || !d) return d;
         return Math.max(0, Math.round(d + (d * C.keepDays - stockOf(s, id)) / 7));
     }
@@ -224,11 +286,12 @@
         const M = C.costMove, info = weekInfo(s.week), month = info.start.month;
         let mul = 1;
         const why = [];
-        for (const x of M.season) if (x.ids.includes(p.id) && x.months.includes(month)) { mul *= x.mul; why.push(x.why); }
+        const gid = p.group || p.id;
+        for (const x of M.season) if (x.ids.includes(gid) && x.months.includes(month)) { mul *= x.mul; why.push(x.why); }
         const ws = (s.weather || []).map(x => x.w);
-        if (ws.includes('typhoon') && M.typhoon.ids.includes(p.id)) { mul *= M.typhoon.mul; why.push(M.typhoon.why); }
-        if (ws.includes('snow') && M.snow.ids.includes(p.id)) { mul *= M.snow.mul; why.push(M.snow.why); }
-        if (info.event && info.event.boost && (info.event.boost[p.id] || 1) >= M.event.boost) { mul *= M.event.mul; why.push(M.event.why); }
+        if (ws.includes('typhoon') && M.typhoon.ids.includes(gid)) { mul *= M.typhoon.mul; why.push(M.typhoon.why); }
+        if (ws.includes('snow') && M.snow.ids.includes(gid)) { mul *= M.snow.mul; why.push(M.snow.why); }
+        if (info.event && info.event.boost && (info.event.boost[gid] || 1) >= M.event.boost) { mul *= M.event.mul; why.push(M.event.why); }
         return { mul, why };
     }
     function moveCosts(s) {
@@ -236,7 +299,7 @@
         s.costDrift = s.costDrift || {};
         s.costPrev = s.costNow ? { ...s.costNow } : null;
         s.costNow = {}; s.costWhy = {};
-        for (const p of C.products) {
+        for (const p of C.skus) {
             const d = s.week === 0 ? 0 : (s.costDrift[p.id] || 0) * M.keep + (rand(s) - 0.5) * 2 * M.drift;
             s.costDrift[p.id] = clamp(d, -M.max, M.max);
             const t = costTarget(s, p);
@@ -247,10 +310,11 @@
     // 連携の 割引 (信頼度で もっと 下がる)
     function costDownOf(s, id) {
         let f = 1;
-        for (const pt of C.partners) if (pt.costDown && pt.costDown[id] && partnerPower(s, pt.id)) f *= 1 - pt.costDown[id] * partnerPower(s, pt.id);
+        const g = groupOf(id);
+        for (const pt of C.partners) if (pt.costDown && pt.costDown[g] && partnerPower(s, pt.id)) f *= 1 - pt.costDown[g] * partnerPower(s, pt.id);
         return f;
     }
-    const costOf = (s, id) => Math.round((s.costNow && s.costNow[id] || product(id).cost) * costDownOf(s, id));
+    const costOf = (s, id) => Math.round((s.costNow && s.costNow[id] || sku(id).cost) * costDownOf(s, id));
     // 先週から 変わった 額 (連携の 割引は 入れない)
     const costChange = (s, id) => (s.costPrev && s.costNow ? (s.costNow[id] || 0) - (s.costPrev[id] || 0) : 0);
     // 1 こ の もうけ (円・率)
@@ -259,7 +323,7 @@
         return { yen: pr - c, rate: pr ? (pr - c) / pr : 0, cost: c };
     }
     // 売り値を かえる (はばの 中に おさめる)
-    function priceBounds(id) { const p = product(id); return [Math.round(p.price * C.priceRange[0] / 10) * 10, Math.round(p.price * C.priceRange[1] / 10) * 10]; }
+    function priceBounds(id) { const p = sku(id); return [Math.round(p.price * C.priceRange[0] / 10) * 10, Math.round(p.price * C.priceRange[1] / 10) * 10]; }
     function setPrice(s, id, v) {
         const [a, b] = priceBounds(id);
         s.prices[id] = clamp(Math.round(v / C.priceStep) * C.priceStep, a, b);
@@ -277,7 +341,7 @@
         s.paid[id] = c;
         s.facilities.push(id);
         const p = C.products.find(x => x.needs === id);
-        if (p) s.orders[p.id] = suggest(s, p.id);
+        if (p) for (const k of pickSkus(s, p.id)) s.orders[k.id] = suggest(s, k.id);
         return true;
     }
     function removeFacility(s, id) {
@@ -285,7 +349,7 @@
         s.cash += Math.round((s.paid[id] || facCost(s, id)) * C.sellBack);
         s.facilities = s.facilities.filter(f => f !== id);
         const p = C.products.find(x => x.needs === id);
-        if (p) { s.orders[p.id] = 0; s.stock[p.id] = []; s.ware[p.id] = []; s.back[p.id] = []; }
+        if (p) for (const k of skusOf(p.id)) { s.orders[k.id] = 0; s.stock[k.id] = []; s.ware[k.id] = []; s.back[k.id] = []; }
         return true;
     }
     // 棚を ふやす・撤去する (2026-11-17 ユーザー指定)。撤去すると 棚の 商品は 倉庫に もどる
@@ -303,10 +367,12 @@
         s.shelves[id]--;
         s.cash += Math.round(C.shelfTypes[p.type].cost * C.shelf.refund);
         const cap = capOf(s, p);
-        let over = s.stock[id].reduce((a, b) => a + b.q, 0) - cap;
-        for (const b of [...s.stock[id]].reverse()) { if (over <= 0) break; const t = Math.min(b.q, over); b.q -= t; over -= t; s.ware[id].push({ q: t, age: b.age }); }
-        s.stock[id] = s.stock[id].filter(b => b.q > 0);
-        if (!s.shelves[id]) s.orders[id] = 0;
+        let over = sumQ(groupStock(s, id)) - cap;
+        for (const k of skusOf(id)) {
+            for (const b of [...s.stock[k.id]].reverse()) { if (over <= 0) break; const t = Math.min(b.q, over); b.q -= t; over -= t; s.ware[k.id].push({ q: t, age: b.age }); }
+            s.stock[k.id] = s.stock[k.id].filter(b => b.q > 0);
+            if (!s.shelves[id]) s.orders[k.id] = 0;
+        }
         return true;
     }
     // 店の 大きさ (2026-11-17 ユーザー指定: お金と 評判が 一定 以上 いる)
@@ -328,11 +394,25 @@
     }
     // 古い セーブを 今の 形に そろえる
     function migrate(s) {
-        for (const p of C.products) {
+        // 種類 (2026-11-17) の 前の セーブ: グループの 在庫・発注は いちばん 人気の 種類へ
+        if (!s.skuVer) {
+            s.skuVer = 1;
+            if (s.wk) s.wk = null; // 営業の 途中は 週の はじめから
+            for (const gid of Object.keys(C.varieties)) {
+                const top = skusOf(gid).filter(k => !k.months && !k.launch).sort((a, b) => b.pop - a.pop)[0];
+                for (const key of ['stock', 'ware', 'back']) { if (s[key][gid]) { s[key][top.id] = s[key][gid]; delete s[key][gid]; } }
+                if (s.orders[gid] !== undefined) { s.orders[top.id] = s.orders[gid]; delete s.orders[gid]; }
+                delete s.prices[gid];
+                if (s.costNow) { delete s.costNow[gid]; }
+            }
+            s.lastPs = null;
+        }
+        for (const p of C.skus) {
             for (const k of ['stock', 'ware', 'back']) if (!s[k][p.id]) s[k][p.id] = [];
             if (s.prices[p.id] === undefined) s.prices[p.id] = p.price;
             if (s.orders[p.id] === undefined) s.orders[p.id] = 0;
         }
+        if (!s.launched) { s.launched = []; s.offer = null; s.newUntil = {}; s.boom = null; s.soldSkus = []; }
         if (!s.shelves) s.shelves = { ...C.startShelves };
         if (s.storeLv === undefined) s.storeLv = 0;
         if (!s.mode) s.mode = 'year';
@@ -341,7 +421,7 @@
         if (!s.everHired) s.everHired = C.startStaff.slice();
         if (!s.metRare) s.metRare = [];
         if (!s.costNow) { s.costNow = {}; s.costDrift = {}; s.costWhy = {}; s.costPrev = null; }
-        for (const p of C.products) if (s.costNow[p.id] === undefined) s.costNow[p.id] = p.cost;
+        for (const p of C.skus) if (s.costNow[p.id] === undefined) s.costNow[p.id] = p.cost;
         for (const p of C.partners) if (!s.partners[p.id]) s.partners[p.id] = { on: false, trust: 0, taken: 0 };
         s.facilities = s.facilities.filter(id => facility(id));
         return s;
@@ -474,7 +554,8 @@
         return out;
     };
     const put = (to, list) => { for (const b of list) { const same = to.find(x => x.age === b.age); if (same) same.q += b.q; else to.push(b); } to.sort((a, b) => b.age - a.age); };
-    const prodsOf = s => C.products.filter(p => available(s, p.id));
+    const prodsOf = s => skusOn(s).concat(C.skus.filter(k => !skuOn(s, k) && groupAvail(s, k.group) && ((s.stock[k.id] || []).length || (s.ware[k.id] || []).length || (s.back[k.id] || []).length)));
+    // ↑ 売れる 種類 + 期間が おわった けど 在庫が のこって いる 種類 (売りきる)
 
     function beginWeek(s) {
         if (s.over || s.wk) return s.wk || null;
@@ -501,10 +582,10 @@
         const prods = prodsOf(s);
         // 仕入れ値は 発注した 週の 値 (とどく 日に 変わらない)
         const costs = {};
-        for (const p of C.products) costs[p.id] = costOf(s, p.id);
+        for (const p of C.skus) costs[p.id] = costOf(s, p.id);
         const rep = {}, ps = {};
         for (const p of prods) {
-            rep[p.id] = { ordered: 0, refused: 0, need: 0, sold: 0, lost: 0, shelfOut: 0, waste: 0, kids: 0, marked: 0, demand: 0, open: 0, sales: 0, cost: 0, unit: costs[p.id], price: s.prices[p.id] };
+            rep[p.id] = { ordered: 0, refused: 0, need: 0, sold: 0, lost: 0, shelfOut: 0, waste: 0, kids: 0, marked: 0, demand: 0, open: 0, sales: 0, cost: 0, subIn: 0, subWant: 0, unit: costs[p.id], price: s.prices[p.id] };
             ps[p.id] = { sold: Array(SLOTS).fill(0), lost: Array(SLOTS).fill(0), out: Array(SLOTS).fill(0) };
         }
         const lim = {};
@@ -541,6 +622,35 @@
         return Math.round(workers(s, t, k).reduce((a, m) => a + stats(s, m)[0] * (m.role === 'register' ? 1 : C.roleHelp), 0) * C.serve * eat + temp);
     }
 
+    function repOf(w, s, id) {
+        if (!w.rep[id]) { w.rep[id] = { ordered: 0, refused: 0, need: 0, sold: 0, lost: 0, shelfOut: 0, waste: 0, kids: 0, marked: 0, demand: 0, open: 0, sales: 0, cost: 0, subIn: 0, subWant: 0, unit: w.costs[id], price: s.prices[id] }; w.ps[id] = { sold: Array(SLOTS).fill(0), lost: Array(SLOTS).fill(0), out: Array(SLOTS).fill(0) }; }
+        return w.rep[id];
+    }
+    const groupIds = prods => [...new Set(prods.map(p => p.group))];
+    // 品出し・調理で 棚へ 出したい 数 (種類ごと)。グループの 棚を 人気の 割合で 分けあう (1 台に varietyPerShelf 種類 まで)
+    function shelfNeeds(s, prods, cook) {
+        const out = {};
+        const list = prods.filter(p => !p.self && (cook ? !!p.cook : !p.cook));
+        for (const gid of groupIds(list)) {
+            const ks = list.filter(p => p.group === gid);
+            const cap = capOf(s, product(gid));
+            const room = cap - ks.reduce((a, k) => a + sumQ(s.stock[k.id]), 0);
+            if (room <= 0) continue;
+            const on = ks.filter(k => sumQ(s.stock[k.id]) > 0);
+            const wait = ks.filter(k => !on.includes(k) && sumQ(s.ware[k.id]) > 0).sort((a, b) => weightOf(s, b) - weightOf(s, a));
+            const face = on.concat(wait).slice(0, Math.max(on.length, facingsOf(s, gid)));
+            const sh = k => Math.max(0.05, shareOf(s, k.id));
+            const wsum = face.reduce((a, k) => a + sh(k), 0);
+            const need = {};
+            let used = 0;
+            for (const k of face) { need[k.id] = Math.max(0, Math.min(Math.floor(cap * sh(k) / wsum - sumQ(s.stock[k.id])), sumQ(s.ware[k.id]))); used += need[k.id]; }
+            if (used > room) { const f = room / used; used = 0; for (const k of face) { need[k.id] = Math.floor(need[k.id] * f); used += need[k.id]; } }
+            for (const k of face) { if (used >= room) break; const extra = Math.min(sumQ(s.ware[k.id]) - need[k.id], room - used); if (extra > 0) { need[k.id] += extra; used += extra; } }
+            for (const k of face) if (need[k.id] > 0) out[k.id] = need[k.id];
+        }
+        return out;
+    }
+
     // 1 日の はじめ: 客の 数・売れやすさ を きめて、発注した 商品 (と 緊急発注) が とどく
     function startDay(s) {
         const w = s.wk, d = w.d, info = weekInfo(s.week), prods = prodsOf(s);
@@ -550,11 +660,11 @@
         const tr = segTraffic(s, info, mult);
         const cooks = inShop(s).filter(m => m.role === 'cook' && m.slots.some(Boolean));
         const cookF = cooks.length ? 0.7 + 0.1 * Math.max(...cooks.map(m => stats(s, m)[C.roles.cook.stat])) : 0.6;
-        const pf = {};
-        for (const p of prods) pf[p.id] = productFactor(s, p, temp, wt, info.event) * (p.cook ? cookF : 1) * (0.9 + rand(s) * 0.2);
+        const pf = {}; // グループごと
+        for (const gid of groupIds(prods)) { const p = product(gid); pf[gid] = productFactor(s, p, temp, wt, info.event) * (p.cook ? cookF : 1) * (0.9 + rand(s) * 0.2); }
         // 朝: 発注した 商品が とどく (発注しないと とどかない)。倉庫が いっぱいなら 受け取れない
         for (const p of prods) {
-            const x = w.rep[p.id];
+            const x = repOf(w, s, p.id);
             const rush = w.act.rush[`${d}:${p.id}`] || 0;
             const q = Math.max(0, Math.round(s.orders[p.id] || 0));
             for (const [n, unit] of [[q, w.costs[p.id]], [rush, Math.round(w.costs[p.id] * C.midweek.rushCost)]]) {
@@ -587,6 +697,7 @@
         const checkNow = checkP + regs.reduce((a, m) => a + stats(s, m)[C.roles.check.stat], 0) * C.checkPer * spare / 2;
         const stockNow = stockP + regs.reduce((a, m) => a + stats(s, m)[C.roles.stock.stat], 0) * C.stockPer * spare / 2;
         // 検品・受け取り: 荷受け場 → 倉庫
+        for (const p of prods) repOf(w, s, p.id);
         const backN = prods.map(p => sumQ(s.back[p.id])), backAll = backN.reduce((x, y) => x + y, 0);
         if (backAll && checkNow) {
             const f = Math.min(1, checkNow / backAll);
@@ -594,13 +705,12 @@
         }
         // 品出し (倉庫 → 棚) と 調理 (ホットスナック・おでんは 作って ケースへ)。足りない 割合で わける
         for (const kind of ['stock', 'cook']) {
-            const list = prods.filter(p => !p.self && (kind === 'cook' ? !!p.cook : !p.cook));
-            const need = list.map(p => Math.max(0, Math.min(capOf(s, p) - sumQ(s.stock[p.id]), sumQ(s.ware[p.id]))));
-            const total = need.reduce((a, b) => a + b, 0);
+            const need = shelfNeeds(s, prods, kind === 'cook');
+            const total = Object.values(need).reduce((a, b) => a + b, 0);
             const pw = kind === 'cook' ? cookP : stockNow;
             if (!total || !pw) continue;
             const f = Math.min(1, pw / total);
-            list.forEach((p, i) => { const n = Math.floor(need[i] * f); if (n > 0) { put(s.stock[p.id], take(s.ware[p.id], n)); w.work[kind][t] += n; } });
+            for (const [id, q] of Object.entries(need)) { const n = Math.floor(q * f); if (n > 0) { put(s.stock[id], take(s.ware[id], n)); w.work[kind][t] += n; } }
         }
         // 客
         const rs = T ? Math.min(1, cap / T) : 1;
@@ -609,27 +719,54 @@
         for (const g of SEGS) { const all = tr[g] * C.segments[g].slot[t] * call; svT[g] = all * rs; day.sv[g] += svT[g]; slotServed += svT[g]; slotAll += all; }
         day.served += slotServed; day.all += slotAll;
         const outs = [];
-        for (const p of prods) {
-            const x = w.rep[p.id], price = s.prices[p.id], ratio = price / p.price;
-            let want = 0, need = 0;
-            for (const g of SEGS) {
-                const kk = C.segments[g].rate[p.id] * priceF(g, ratio, r.line) * day.pf[p.id];
-                want += tr[g] * C.segments[g].slot[t] * call * kk;
-                need += svT[g] * kk;
+        const shelfOf = p => (p.self ? s.ware[p.id] : s.stock[p.id]); // コーヒーは マシンで その場で いれる (倉庫の 豆から)
+        // 客は まず グループ (おにぎり) を 買いに 来て、ほしい 種類を さがす (2026-11-17 ユーザー指定: 9 章)
+        for (const gid of groupIds(prods)) {
+            const ks = prods.filter(p => p.group === gid);
+            let unmet = 0, unmetYen = 0;
+            for (const p of ks) {
+                const x = w.rep[p.id], price = s.prices[p.id], ratio = price / p.price, sh = shareOf(s, p.id);
+                let want = 0, need = 0;
+                if (sh > 0) for (const g of SEGS) {
+                    const kk = C.segments[g].rate[gid] * priceF(g, ratio, r.line) * day.pf[gid] * sh;
+                    want += tr[g] * C.segments[g].slot[t] * call * kk;
+                    need += svT[g] * kk;
+                }
+                want = Math.round(want); need = Math.round(need);
+                x.demand += want; x.need += need;
+                const sold = sumQ(take(shelfOf(p), need));
+                x.sold += sold; x.lost += need - sold;
+                const pk = w.ps[p.id];
+                if (pk) { pk.sold[k] += sold; pk.lost[k] += need - sold; }
+                if (need > sold && sumQ(s.ware[p.id]) > 0) { x.shelfOut += need - sold; w.acc.shelfOutAll += need - sold; day.flags.shelf++; if (pk) pk.out[k] += need - sold; }
+                x.sales += sold * price; day.sales += sold * price; slotSales += sold * price;
+                w.acc.demandYen += need * price;
+                if (ratio > r.line * 1.08) { w.acc.high += sold; day.flags.high++; }
+                if (ratio < C.cheapLine) { w.acc.cheap += sold; day.flags.cheap++; }
+                if (need > sold) {
+                    // 置いて いない 種類 (在庫 0・発注 0) は 品切れ では ない: substituteMissing の 客は 別の 種類へ
+                    const carried = (s.orders[p.id] || 0) > 0 || stockOf(s, p.id) > 0 || (w.act.rush[`${d + 1}:${p.id}`] || 0) > 0;
+                    const rate = carried ? C.substitute : C.substituteMissing;
+                    unmet += (need - sold) * rate / C.substitute; unmetYen += (need - sold) * price;
+                    if (carried) outs.push(p.id);
+                }
             }
-            want = Math.round(want); need = Math.round(need);
-            x.demand += want; x.need += need;
-            const shelf = p.self ? s.ware[p.id] : s.stock[p.id]; // コーヒーは マシンで その場で いれる (倉庫の 豆から)
-            const sold = sumQ(take(shelf, need));
-            x.sold += sold; x.lost += need - sold;
-            const pk = w.ps[p.id];
-            if (pk) { pk.sold[k] += sold; pk.lost[k] += need - sold; }
-            if (need > sold && sumQ(s.ware[p.id]) > 0) { x.shelfOut += need - sold; w.acc.shelfOutAll += need - sold; day.flags.shelf++; if (pk) pk.out[k] += need - sold; }
-            x.sales += sold * price; day.sales += sold * price; slotSales += sold * price;
-            w.acc.demandYen += need * price; w.acc.lostYen += (need - sold) * price;
-            if (ratio > r.line * 1.08) { w.acc.high += sold; day.flags.high++; }
-            if (ratio < C.cheapLine) { w.acc.cheap += sold; day.flags.cheap++; }
-            if (need > sold) { w.acc.soldOut++; day.flags.out++; outs.push(p.id); }
+            // 品切れの 代わり: substitute の 客は 同じ グループの 別の 種類を 買う。のこりは 帰る
+            let subYen = 0;
+            if (unmet > 0 && ks.length > 1) {
+                const cand = ks.filter(p => sumQ(shelfOf(p)) > 0);
+                const ws = cand.reduce((a, p) => a + Math.max(0.05, weightOf(s, p)), 0);
+                const pool = Math.round(unmet * C.substitute);
+                for (const p of cand) {
+                    const ask = Math.round(pool * Math.max(0.05, weightOf(s, p)) / ws);
+                    const got = sumQ(take(shelfOf(p), ask)), x = w.rep[p.id], price = s.prices[p.id];
+                    x.subWant += ask; x.subIn += got; x.sold += got; x.sales += got * price;
+                    day.sales += got * price; slotSales += got * price; subYen += got * price;
+                    if (w.ps[p.id]) w.ps[p.id].sold[k] += got;
+                }
+            }
+            w.acc.lostYen += Math.max(0, unmetYen - subYen);
+            if (outs.some(id => groupOf(id) === gid)) { w.acc.soldOut++; day.flags.out++; }
         }
         const slot = { d, t, k, customers: Math.round(slotServed), walkAway: Math.round(slotAll - slotServed), sales: slotSales, cap, want: Math.round(T), outs, callout: call > 1 };
         w.slots.push(slot);
@@ -643,7 +780,7 @@
     function endDay(s) {
         const w = s.wk, d = w.d, day = w.day, prods = prodsOf(s), x0 = w.acc;
         for (const p of prods) {
-            const x = w.rep[p.id], price = s.prices[p.id];
+            const x = repOf(w, s, p.id), price = s.prices[p.id];
             x.open++;
             if (!p.shelf) continue;
             const life = p.shelf + w.shelfPlus;
@@ -698,18 +835,49 @@
         return finishWeek(s);
     }
 
+    // 本部の 新商品を 置く・ことわる (2026-11-17 ユーザー指定: 置くか どうかは プレイヤーが きめる)
+    function acceptOffer(s, yes) {
+        if (!s.offer) return false;
+        const id = s.offer;
+        s.offer = null;
+        if (!yes) return true;
+        s.launched.push(id);
+        s.newUntil[id] = s.week + C.launch.newWeeks;
+        return true;
+    }
+    // おまかせ 配分: グループの 発注 total を 先週の 売れ行き (なければ 人気) で 種類に 分ける
+    function splitOrder(s, gid, total) {
+        const ks = pickSkus(s, gid);
+        const h = s.history.filter(x => !x.moved);
+        const last = h.length ? h[h.length - 1].products : {};
+        const wt = k => { const x = last[k.id]; return x && x.open ? Math.max(1, (x.need || 0) + (x.subWant || 0)) : Math.max(1, dailyNeed(s, k.id)); };
+        const sumW = ks.reduce((a, k) => a + wt(k), 0);
+        for (const k of skusOf(gid)) s.orders[k.id] = 0;
+        let left = Math.round(total);
+        ks.forEach((k, i) => { const q = i === ks.length - 1 ? left : Math.round(total * wt(k) / sumW); s.orders[k.id] = Math.max(0, q); left -= q; });
+        return true;
+    }
+    const groupOrder = (s, gid) => skusOf(gid).reduce((a, k) => a + (s.orders[k.id] || 0), 0);
+
     // ----- 営業中に 手を 打つ (2026-11-17 ユーザー決定: 案B) -----
     // k = つぎの コマ (s.wk.d * 3 + s.wk.t)。できないと false
     const nextK = s => (s.wk ? s.wk.d * 3 + s.wk.t : -1);
-    function midStock(s, id) { // すぐ 品出し: つぎの コマの 品出しの 力を つかって 倉庫 → 棚
-        const w = s.wk, p = product(id);
-        if (!w || w.d >= 7 || !p || p.self || p.cook || !available(s, id)) return false;
+    function midStock(s, id) { // すぐ 品出し: つぎの コマの 品出しの 力を つかって 倉庫 → 棚 (id = グループ・種類 どちらでも。グループ ぶん 出す)
+        const w = s.wk, gid = groupOf(id), p = product(gid);
+        if (!w || w.d >= 7 || !p || p.self || p.cook || !groupAvail(s, gid)) return false;
         const k = nextK(s), t = w.t;
-        const left = slotPower(s, t, 'stock', k) - (w.act.stockUsed[k] || 0);
-        const n = Math.floor(Math.min(left, capOf(s, p) - sumQ(s.stock[id]), sumQ(s.ware[id])));
+        let left = Math.floor(slotPower(s, t, 'stock', k) - (w.act.stockUsed[k] || 0));
+        if (left <= 0) return false;
+        const need = shelfNeeds(s, prodsOf(s).filter(x => x.group === gid), false);
+        let n = 0;
+        for (const [kid, q] of Object.entries(need)) {
+            const m = Math.min(q, left);
+            if (m <= 0) break;
+            put(s.stock[kid], take(s.ware[kid], m));
+            s.ware[kid] = s.ware[kid].filter(b => b.q > 0);
+            left -= m; n += m;
+        }
         if (n <= 0) return false;
-        put(s.stock[id], take(s.ware[id], n));
-        s.ware[id] = s.ware[id].filter(b => b.q > 0);
         w.act.stockUsed[k] = (w.act.stockUsed[k] || 0) + n;
         w.work.stock[t] += n;
         return n;
@@ -717,7 +885,7 @@
     function midRush(s, id, q) { // 緊急発注: つぎの 日の 朝に とどく (仕入れ値 高め・送料)
         const w = s.wk;
         q = Math.round(q);
-        if (!w || w.d >= 6 || !available(s, id) || product(id).self || q <= 0) return false;
+        if (!w || w.d >= 6 || !sku(id) || !available(s, id) || sku(id).self || q <= 0) return false;
         const key = `${w.d + 1}:${id}`;
         if (!w.act.rush[key]) w.acc.rushFee += C.midweek.rushFee; // 送料は 週の おわりに 連携の 料金と いっしょに はらう
         w.act.rush[key] = (w.act.rush[key] || 0) + q;
@@ -744,9 +912,25 @@
     }
 
     // 棚 1 つの ようす (2026-11-17 ユーザー指定: 棚を 調べる)。営業中は 今の 日・コマ、そうでない ときは 先週の 数字
+    // id = グループ。rows = 種類ごと (2026-11-17 ユーザー指定: 種類ごとに 1 行)
     function shelfInfo(s, id) {
-        const p = product(id);
+        const gid = groupOf(id), p = product(gid);
         if (!p) return null;
+        const ks = skusOf(gid).filter(k => skuOn(s, k) || stockOf(s, k.id) > 0);
+        const rows = ks.map(k => ({ ...skuInfo(s, k.id), k }));
+        const sum = key => rows.reduce((a, r) => a + (r[key] || 0), 0);
+        const exp = { green: 0, yellow: 0, red: 0 };
+        for (const r of rows) for (const c of ['green', 'yellow', 'red']) exp[c] += r.exp[c];
+        const live = rows.some(r => r.live);
+        const today = live ? [0, 1, 2].map(t => rows.reduce((a, r) => a + (r.today ? r.today[t] : 0), 0)) : null;
+        const lastSame = rows.some(r => r.lastSame) ? [0, 1, 2].map(t => rows.reduce((a, r) => a + (r.lastSame ? r.lastSame[t] : 0), 0)) : null;
+        const outT = [...new Set(rows.flatMap(r => r.outT))].sort();
+        const order = ['sellout', 'soon', 'left', 'good', ''];
+        const note = rows.map(r => r.note).sort((a, b) => order.indexOf(a) - order.indexOf(b))[0] || '';
+        return { p, rows, live, d: rows[0] ? rows[0].d : null, doneT: rows[0] ? rows[0].doneT : 3, onShelf: sum('onShelf'), cap: p.self ? null : capOf(s, p), ware: sum('ware'), exp, today, lastSame, outT, lostToday: sum('lostToday'), weekSold: sum('weekSold'), weekLost: sum('weekLost'), note, facings: facingsOf(s, gid), shown: rows.filter(r => r.onShelf > 0).length };
+    }
+    function skuInfo(s, id) {
+        const p = sku(id);
         const life = p.shelf ? p.shelf + (s.effects.hieishi ? 1 : 0) : 0;
         const exp = { green: 0, yellow: 0, red: 0 };
         for (const b of [...s.stock[id], ...(p.self ? s.ware[id] : [])]) {
@@ -773,18 +957,21 @@
         else if (live && w.t > 0 && w.t < 3 && onShelf < perSlot * (3 - w.t) && sumQ(s.ware[id]) < perSlot) note = 'soon';
         else if (exp.red > Math.max(5, onShelf * 0.3)) note = 'left';
         else if (weekSold > 0 && onShelf > 0) note = 'good';
-        return { p, live, d, doneT, onShelf, cap: p.self ? null : capOf(s, p), ware: sumQ(s.ware[id]) + sumQ(s.back[id]), exp, today, lastSame, outT, lostToday, weekSold, weekLost, note, margin: marginOf(s, id) };
+        return { p, live, d, doneT, onShelf, cap: p.self ? null : capOf(s, p), ware: sumQ(s.ware[id]) + sumQ(s.back[id]), exp, today, lastSame, outT, lostToday, weekSold, weekLost, note, margin: marginOf(s, id), on: skuOn(s, p) };
     }
     // 早送りを 止めて 手を 打つ タイミング (2026-11-17 ユーザー決定)
     function alerts(s) {
         const w = s.wk;
         if (!w || w.d >= 7 || !w.slots.length) return [];
         const last = w.slots[w.slots.length - 1], out = [];
-        const soon = prodsOf(s).filter(p => !p.self && !p.cook && shelfInfo(s, p.id).note === 'soon').map(p => p.id);
+        // ids は グループ (棚の 単位)
+        const gs = groupIds(prodsOf(s));
+        const soon = gs.filter(g => !product(g).self && !product(g).cook && shelfInfo(s, g).note === 'soon');
         if (soon.length) out.push({ kind: 'soon', ids: soon });
-        if (last.outs.length) out.push({ kind: 'out', ids: last.outs });
+        const outG = [...new Set(last.outs.map(groupOf))].filter(g => { const inf = shelfInfo(s, g); return inf.onShelf < (inf.cap || 1) * 0.15 || !inf.onShelf; });
+        if (outG.length) out.push({ kind: 'out', ids: outG });
         if (w.t === 0) {
-            const red = prodsOf(s).filter(p => p.shelf && shelfInfo(s, p.id).exp.red > Math.max(20, capOf(s, p) * 0.25)).map(p => p.id);
+            const red = gs.filter(g => product(g).shelf && shelfInfo(s, g).exp.red > Math.max(20, capOf(s, product(g)) * 0.25));
             if (red.length >= 2) out.push({ kind: 'expire', ids: red });
         }
         if (last.walkAway > Math.max(15, last.want * 0.08)) out.push({ kind: 'queue', n: last.walkAway });
@@ -808,6 +995,17 @@
         }
         s.lastPs = w.ps;
         s.wk = null;
+        // グループの まとめ (種類を たした もの)
+        const groups = {};
+        for (const [id, x] of Object.entries(rep)) {
+            const g = groups[groupOf(id)] = groups[groupOf(id)] || { ordered: 0, refused: 0, need: 0, sold: 0, lost: 0, shelfOut: 0, waste: 0, kids: 0, marked: 0, demand: 0, sales: 0, cost: 0, subIn: 0, left: 0 };
+            for (const key of Object.keys(g)) if (key !== 'left') g[key] += x[key] || 0;
+        }
+        // 帰った 客 = 品切れ − 別の 種類を 買った 客
+        for (const g of Object.values(groups)) g.left = Math.max(0, g.lost - g.subIn);
+        // 売った 種類 (図鑑。何回 遊んでも のこる ぶんは 画面で 保存)
+        s.soldSkus = s.soldSkus || [];
+        for (const [id, x] of Object.entries(rep)) if (x.sold > 0 && !s.soldSkus.includes(id)) s.soldSkus.push(id);
 
         // ----- お金 -----
         const wageSum = wages(s);
@@ -922,7 +1120,18 @@
 
         // 地域の 知識 (売った 商品の 好みが 分かって くる)
         const kn = s.know[s.region] = s.know[s.region] || {};
-        for (const p of prods) if (rep[p.id].sold) kn[p.id] = (kn[p.id] || 0) + 1;
+        for (const gid of Object.keys(groups)) if (groups[gid].sold) kn[gid] = (kn[gid] || 0) + 1;
+
+        // ----- 新商品と ブーム (2026-11-17 ユーザー指定: 9-3) -----
+        let offerNow = null, boomNow = null;
+        if (!s.offer && rand(s) < C.launch.chance) {
+            const pool = C.skus.filter(k => k.launch && !s.launched.includes(k.id) && groupAvail(s, k.group));
+            if (pool.length) { s.offer = pool[Math.floor(rand(s) * pool.length)].id; offerNow = s.offer; say('sasaki', `本部から 新商品の おすすめ！「${sku(s.offer).full}」を 置いて みないか？ (発注の ページで きめてね)`); }
+        }
+        if ((!s.boom || s.boom.until <= s.week + 1) && rand(s) < C.boom.chance) {
+            const pool = skusOn(s).filter(k => !k.single);
+            if (pool.length) { const k = pool[Math.floor(rand(s) * pool.length)]; s.boom = { id: k.id, until: s.week + 1 + randInt(s, C.boom.weeks[0], C.boom.weeks[1]) }; boomNow = s.boom; say('furukawa', `SNS で「${k.full}」が はやってる！ しばらく よく 売れるよ。`); }
+        }
 
         // ----- ライバル -----
         for (let i = 0; i < C.rivals.length; i++) {
@@ -937,7 +1146,7 @@
         const report = {
             week: s.week, info, days, products: rep, limited: lim, sales, buy, limitedCost, wages: wageSum, wageList: s.staff.map(m => ({ id: m.id, yen: wageOf(m), slots: workSlots(m), job: m.job })), upkeep: upkeepSum, rent, royalty, fees, profit,
             customers: Math.round(served), walkAway: Math.round(walk), caps: [0, 1, 2].map(k => registerCap(s, k)), rushFee: w.acc.rushFee, slots: w.slots, assort, service, repBefore, repAfter: s.rep, regBefore, regAfter: s.regulars,
-            high, cheap, soldOut, kids, wasteYen, segServed, events, returned, cheapShop, work, month: null
+            high, cheap, soldOut, kids, wasteYen, segServed, events, returned, cheapShop, work, month: null, groups, offer: offerNow, boom: boomNow
         };
         s.history.push({ week: s.week, sales, profit, customers: Math.round(served), rep: s.rep, cash: s.cash, products: rep });
 
@@ -999,7 +1208,7 @@
     }
 
     const Sim = {
-        C, costOf, costChange, costDownOf, marginOf, setPrice, priceBounds, priceForMargin, moveCosts, diffOf, yearOf, levelOf, floorCap, facCap, rentOf, canExpand, expandStore, migrate, shelfUpkeep, rand, dateOf, weekInfo, monthEnds, newGame, available, capOf, stats, slotCap, rolePower, addShelf, removeShelf, shelfUnits, floorUsed, rareNow, setRole, bestRole, wareCap, wareUse, expandWare, slotWage, wageOf, wages, upkeep, upkeepOf, recruit, priceF, ratioOf, productFactor,
+        C, sku, skusOf, groupOf, hasVariety, skuOn, skusOn, groupSkus, weightOf, shareOf, facingsOf, pickSkus, groupStock, acceptOffer, splitOrder, groupOrder, costOf, costChange, costDownOf, marginOf, setPrice, priceBounds, priceForMargin, moveCosts, diffOf, yearOf, levelOf, floorCap, facCap, rentOf, canExpand, expandStore, migrate, shelfUpkeep, rand, dateOf, weekInfo, monthEnds, newGame, available, capOf, stats, slotCap, rolePower, addShelf, removeShelf, shelfUnits, floorUsed, rareNow, setRole, bestRole, wareCap, wareUse, expandWare, slotWage, wageOf, wages, upkeep, upkeepOf, recruit, priceF, ratioOf, productFactor,
         estTraffic, estSlots, suggest, dailyNeed, stockOf, prepareWeek, facCost, buyFacility, removeFacility, hire, fire, toggleSlot, sendDungeon, recall,
         matsLeft, craftable, addCraft, useItem, setPartner, partnerFee, bookEvent, repay, borrow, relocate, knownPref, runWeek, beginWeek, runSlot, runDay, finishWeek, midStock, midRush, midShift, midCook, midCallout, shelfInfo, alerts, SLOTS, ranking,
         product, facility, staffDef, recipe, partner, regionOf, trioOn, inShop, hasFac, SEGS

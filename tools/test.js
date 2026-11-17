@@ -6,7 +6,8 @@ let ok = 0, ng = 0;
 function check(name, cond, info = '') { if (cond) ok++; else { ng++; console.log(`✗ ${name} ${info}`); } }
 const fresh = (region = 'onga', seed = 1) => Sim.newGame('t', seed, region);
 const runN = (s, n, f) => { for (let i = 0; i < n && !s.over; i++) { if (f) f(s); Sim.runWeek(s); } };
-const orderAll = s => { for (const p of C.products) if (Sim.available(s, p.id)) s.orders[p.id] = Sim.suggest(s, p.id); };
+const orderAll = s => { for (const p of C.products) if (Sim.available(s, p.id)) for (const k of Sim.pickSkus(s, p.id)) s.orders[k.id] = Sim.suggest(s, k.id); };
+const SAKE = 'onigiri.sake', TEA = 'drink.tea', KARA = 'bento.karaage';
 const freshO = (region, seed) => { const s = fresh(region, seed); orderAll(s); return s; };
 
 // おなじ たねなら おなじ 結果・セーブから 続けても 同じ
@@ -31,23 +32,23 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
 
 // 消費期限・値下げ・子ども食堂
 {
-    const s = freshO(); s.orders.onigiri = 2000;
+    const s = freshO(); s.orders[SAKE] = 2000;
     const r = Sim.runWeek(s);
-    check('多すぎる おにぎりは 廃棄', r.products.onigiri.waste > 5000, r.products.onigiri.waste);
-    const k = freshO(); k.orders.onigiri = 2000; k.kids = true;
+    check('多すぎる おにぎりは 廃棄', r.products[SAKE].waste > 5000, r.products[SAKE].waste);
+    const k = freshO(); k.orders[SAKE] = 2000; k.kids = true;
     const rk = Sim.runWeek(k);
-    check('子ども食堂に 回すと 廃棄 0', rk.products.onigiri.waste === 0 && rk.products.onigiri.kids > 5000);
+    check('子ども食堂に 回すと 廃棄 0', rk.products[SAKE].waste === 0 && rk.products[SAKE].kids > 5000);
     check('子ども食堂で 評判が 上がる', rk.repAfter > r.repAfter);
-    const m = freshO(); m.orders.onigiri = 2000; m.markdown = 0.4;
-    check('値下げで 期限 今日までの 商品が 売れる', Sim.runWeek(m).products.onigiri.marked > 1000);
-    const z = freshO(); z.orders.onigiri = 0;
-    check('おにぎり 0 なら 品切れ', Sim.runWeek(z).products.onigiri.lost > 300);
+    const m = freshO(); m.orders[SAKE] = 2000; m.markdown = 0.4;
+    check('値下げで 期限 今日までの 商品が 売れる', Sim.runWeek(m).products[SAKE].marked > 1000);
+    const z = freshO(); for (const x of Sim.skusOf('onigiri')) z.orders[x.id] = 0;
+    check('おにぎり 0 なら 品切れ', Sim.runWeek(z).groups.onigiri.lost > 300);
 }
 // 値段: 高いと 売れない・地域で ラインが ちがう
 {
     const a = freshO('tsugaku'), b = freshO('tsugaku');
-    b.prices.drink = 220; a.orders.drink = b.orders.drink = 900;
-    check('高いと 売れない', Sim.runWeek(b).products.drink.sold < Sim.runWeek(a).products.drink.sold * 0.6);
+    b.prices[TEA] = 220; a.orders[TEA] = b.orders[TEA] = 900;
+    check('高いと 売れない', Sim.runWeek(b).products[TEA].sold < Sim.runWeek(a).products[TEA].sold * 0.6);
     const k1 = fresh('kokura'), t1 = fresh('tsugaku');
     check('小倉駅前は 高くても 買う', Sim.priceF('worker', 1.15, Sim.regionOf(k1).line) > Sim.priceF('worker', 1.15, Sim.regionOf(t1).line));
 }
@@ -89,10 +90,10 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     const s = fresh(); s.cash = 1e7;
     const cap0 = Sim.capOf(s, Sim.product('onigiri'));
     check('棚を ふやすと ならべられる 数が ふえる', Sim.addShelf(s, 'onigiri') && Sim.capOf(s, Sim.product('onigiri')) === cap0 * 2 && Sim.floorUsed(s) === 9);
-    s.stock.snack = [{ q: 150, age: 0 }];
+    s.stock['snack.potechi'] = [{ q: 150, age: 0 }];
     const cash0 = s.cash;
-    check('棚を 撤去すると お金が 少し もどり、商品は 倉庫へ', Sim.removeShelf(s, 'snack') && s.cash > cash0 && s.ware.snack.reduce((a, b) => a + b.q, 0) === 150 && !Sim.available(s, 'snack'));
-    check('棚が ない 商品は 発注できない', s.orders.snack === 0);
+    check('棚を 撤去すると お金が 少し もどり、商品は 倉庫へ', Sim.removeShelf(s, 'snack') && s.cash > cash0 && s.ware['snack.potechi'].reduce((a, b) => a + b.q, 0) === 150 && !Sim.available(s, 'snack'));
+    check('棚が ない 商品は 発注できない', Sim.skusOf('snack').every(x => s.orders[x.id] === 0) && !Sim.available(s, 'snack.potechi'));
     for (const id of ['bread', 'daily']) Sim.removeShelf(s, id);
     for (const f of C.facilities) Sim.buyFacility(s, f.id);
     check('棚を 撤去すると 施設を 多く 置ける', s.facilities.length === Sim.facCap(s), s.facilities.length);
@@ -172,31 +173,31 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
 // 仕入れ値の 変動 (2026-11-17 ユーザー決定)
 {
     const s = fresh('onga', 3);
-    check('はじめの 週は 元の 仕入れ値 (季節・行事の ぶん だけ)', C.products.every(p => s.costWhy[p.id] || Sim.costOf(s, p.id) === p.cost));
+    check('はじめの 週は 元の 仕入れ値 (季節・行事の ぶん だけ)', C.skus.every(p => s.costWhy[p.id] || Sim.costOf(s, p.id) === p.cost));
     let moved = 0, inside = true, summerIce = 0, springIce = 0;
     for (let w = 0; w < 52; w++) {
         orderAll(s); Sim.runWeek(s);
         if (s.over) break;
-        for (const p of C.products) { const c = s.costNow[p.id]; if (c !== p.cost) moved++; if (c > p.cost * 1.25 + 1 || c < p.cost * 0.75 - 1) inside = false; }
+        for (const p of C.skus) { const c = s.costNow[p.id]; if (c !== p.cost) moved++; if (c > p.cost * 1.25 + 1 || c < p.cost * 0.75 - 1) inside = false; }
         const m = Sim.weekInfo(s.week).start.month;
-        if (m === 8) summerIce += s.costNow.ice / Sim.product('ice').cost; if (m === 5) springIce += s.costNow.ice / Sim.product('ice').cost;
+        if (m === 8) summerIce += s.costNow['ice.vanilla'] / Sim.sku('ice.vanilla').cost; if (m === 5) springIce += s.costNow['ice.vanilla'] / Sim.sku('ice.vanilla').cost;
     }
     check('仕入れ値は 週ごとに 動く', moved > 100, moved);
     check('仕入れ値は 元から ±25% の 中', inside);
     check('夏は アイスの 仕入れが 上がる', summerIce / 4 > springIce / 4, `${summerIce} ${springIce}`);
     const a = fresh('onga', 5), b = fresh('onga', 5);
     Sim.setPartner(b, 'farm', true);
-    check('農場と 組むと お米と 野菜の 仕入れが 下がる', Sim.costOf(b, 'salad') < Sim.costOf(a, 'salad') && Sim.costOf(b, 'drink') === Sim.costOf(a, 'drink'));
+    check('農場と 組むと お米と 野菜の 仕入れが 下がる', Sim.costOf(b, 'salad') < Sim.costOf(a, 'salad') && Sim.costOf(b, TEA) === Sim.costOf(a, TEA));
     b.partners.farm.trust = 10;
     check('信頼度で もっと 下がる', Sim.costOf(b, 'salad') <= Math.round(Sim.costOf(a, 'salad') * (1 - 0.1 * 1.1)) + 1);
-    const o = freshO('onga', 6); const c0 = Sim.costOf(o, 'onigiri'); const r = Sim.runWeek(o);
-    check('仕入れ値は 発注した 週の 値で きまる', r.products.onigiri.cost === r.products.onigiri.ordered * c0);
-    const p0 = o.prices.onigiri; o.costNow.onigiri = 200;
-    check('仕入れが 上がっても 売り値は 自動で 変わらない', o.prices.onigiri === p0 && Sim.marginOf(o, 'onigiri').yen < 0);
-    Sim.setPrice(o, 'bento', Sim.priceForMargin(o, 'bento', 0.4));
-    check('もうけ ○% の 売り値', Math.abs(Sim.marginOf(o, 'bento').rate - 0.4) < 0.03, Sim.marginOf(o, 'bento').rate);
+    const o = freshO('onga', 6); const c0 = Sim.costOf(o, SAKE); const r = Sim.runWeek(o);
+    check('仕入れ値は 発注した 週の 値で きまる', r.products[SAKE].cost === r.products[SAKE].ordered * c0);
+    const p0 = o.prices[SAKE]; o.costNow[SAKE] = 200;
+    check('仕入れが 上がっても 売り値は 自動で 変わらない', o.prices[SAKE] === p0 && Sim.marginOf(o, SAKE).yen < 0);
+    Sim.setPrice(o, KARA, Sim.priceForMargin(o, KARA, 0.4));
+    check('もうけ ○% の 売り値', Math.abs(Sim.marginOf(o, KARA).rate - 0.4) < 0.03, Sim.marginOf(o, KARA).rate);
     const old = JSON.parse(JSON.stringify(fresh())); delete old.costNow;
-    check('古い セーブにも 仕入れ値が 入る', Sim.migrate(old).costNow.onigiri === Sim.product('onigiri').cost);
+    check('古い セーブにも 仕入れ値が 入る', Sim.migrate(old).costNow[SAKE] === Sim.sku(SAKE).cost);
 }
 // 1 日ずつ・コマずつ 進める (2026-11-17 ユーザー決定: 指示書 10-2 案B)
 {
@@ -213,16 +214,16 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     const c2 = JSON.parse(JSON.stringify(c));
     check('営業の 途中で セーブしても 同じ 続き', Sim.runWeek(c).sales === Sim.runWeek(c2).sales && c.cash === c2.cash);
     // 営業中の 手
-    const m = freshO('onga', 9); m.orders.onigiri = 400; m.staff.forEach(x => { x.role = 'register'; });
+    const m = freshO('onga', 9); m.orders[SAKE] = 400; m.staff.forEach(x => { x.role = 'register'; });
     Sim.beginWeek(m); Sim.runSlot(m); Sim.runSlot(m);
-    const before = m.stock.onigiri.reduce((x, y) => x + y.q, 0);
+    const gq = () => Sim.groupStock(m, 'onigiri').reduce((x, y) => x + y.q, 0), before = gq();
     const n = Sim.midStock(m, 'onigiri');
-    check('すぐ 品出しで 倉庫から 棚へ', n > 0 && m.stock.onigiri.reduce((x, y) => x + y.q, 0) === before + n, n);
+    check('すぐ 品出しで 倉庫から 棚へ', n > 0 && gq() === before + n, n);
     const r0 = freshO('onga', 9), r1 = JSON.parse(JSON.stringify(r0));
     Sim.beginWeek(r1); Sim.runSlot(r1);
-    check('緊急発注は 最後の 日は できない', Sim.midRush(r1, 'onigiri', 100) && (() => { const x = JSON.parse(JSON.stringify(r0)); Sim.beginWeek(x); while (x.wk.d < 6) Sim.runSlot(x); return !Sim.midRush(x, 'onigiri', 10); })());
+    check('緊急発注は 最後の 日は できない', Sim.midRush(r1, SAKE, 100) && (() => { const x = JSON.parse(JSON.stringify(r0)); Sim.beginWeek(x); while (x.wk.d < 6) Sim.runSlot(x); return !Sim.midRush(x, SAKE, 10); })());
     const rr0 = Sim.runWeek(r0), rr1 = Sim.runWeek(r1);
-    check('緊急発注は つぎの 日に とどいて 高く つく', rr1.products.onigiri.ordered === rr0.products.onigiri.ordered + 100 && rr1.fees === rr0.fees + C.midweek.rushFee && rr1.products.onigiri.cost > rr0.products.onigiri.cost + 100 * Sim.costOf(r0, 'onigiri'));
+    check('緊急発注は つぎの 日に とどいて 高く つく', rr1.products[SAKE].ordered === rr0.products[SAKE].ordered + 100 && rr1.fees === rr0.fees + C.midweek.rushFee && rr1.products[SAKE].cost > rr0.products[SAKE].cost + 100 * Sim.costOf(r0, SAKE));
     const k0 = freshO('onga', 10), k1 = JSON.parse(JSON.stringify(k0));
     Sim.beginWeek(k1); Sim.midCallout(k1);
     Sim.beginWeek(k0);
@@ -232,6 +233,45 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     check('営業中の シフト入れ替えで やる気が 下がる', Sim.midShift(sh, sh.staff[1].id, 2) && sh.staff[1].mood === mood0 - C.midweek.shiftMood && sh.staff[1].slots[2] === 0);
     const info = Sim.shelfInfo(Sim.runWeek(freshO('onga', 12)) && (() => { const x = freshO('onga', 12); Sim.runWeek(x); return x; })(), 'onigiri');
     check('棚を 調べると 先週の 数字が 出る', info && !info.live && info.weekSold > 0 && info.cap > 0);
+}
+// 商品の 種類 (2026-11-17 ユーザー指定: 指示書 9 章)
+{
+    check('おにぎりには 種類が ある', Sim.skusOf('onigiri').length >= 6 && Sim.hasVariety('onigiri') && !Sim.hasVariety('daily'));
+    const s = fresh('onga', 21);
+    check('期間限定は その 月 だけ (4 月に 栗おこわは ない)', !Sim.available(s, 'onigiri.kuri'));
+    const sw = fresh('onga', 21); sw.cash = 1e7; Sim.addShelf(sw, 'sweets');
+    check('棚を 置くと 期間限定の 種類も 発注できる (4 月の いちごの ケーキ)', Sim.available(sw, 'sweets.ichigo') && !Sim.available(sw, 'sweets.montblanc'));
+    check(`棚 1 台に 置ける 種類は ${C.varietyPerShelf} つ まで`, Sim.facingsOf(s, 'onigiri') === C.varietyPerShelf && Sim.pickSkus(s, 'onigiri').length === C.varietyPerShelf);
+    // 欲しい 種類が ない とき: 6 割は 別の 種類を 買う
+    const one = fresh('onga', 22), all = fresh('onga', 22);
+    one.orders[SAKE] = 1500;
+    for (const k of Sim.pickSkus(all, 'onigiri')) all.orders[k.id] = Math.round(1500 / C.varietyPerShelf);
+    const r1 = Sim.runWeek(one), r4 = Sim.runWeek(all);
+    check('品切れの 代わりに 同じ グループの 別の 種類を 買う', r1.products[SAKE].subIn > 0 && r1.groups.onigiri.left > 0);
+    check('種類を そろえると 帰る 客が へる', r4.groups.onigiri.left < r1.groups.onigiri.left, `${r4.groups.onigiri.left} < ${r1.groups.onigiri.left}`);
+    check('種類ごとの 売上は グループの 合計', Math.abs(r4.groups.onigiri.sales - Sim.skusOf('onigiri').reduce((a, k) => a + (r4.products[k.id] ? r4.products[k.id].sales : 0), 0)) < 1);
+    // 新商品
+    const n = fresh('onga', 23); n.offer = 'onigiri.ebimayo';
+    check('新商品は 置くと きめるまで 発注できない', !Sim.available(n, 'onigiri.ebimayo'));
+    Sim.acceptOffer(n, true);
+    check('新商品を 置くと 発注できて しばらく 人気', Sim.available(n, 'onigiri.ebimayo') && Sim.weightOf(n, Sim.sku('onigiri.ebimayo')) > Sim.sku('onigiri.ebimayo').pop);
+    let offers = 0, booms = 0;
+    const watch = s2 => { if (s2.offer) offers++; if (s2.boom && s2.boom.until > s2.week) booms++; St.normal(s2); };
+    St.play(watch, 31, 'onga');
+    check('本部が 新商品を すすめて くる・ブームが ある', offers > 3 && booms > 0, `${offers} ${booms}`);
+    // おまかせ 配分
+    const sp = freshO('onga', 24); Sim.runWeek(sp); Sim.splitOrder(sp, 'onigiri', 400);
+    check('おまかせ 配分で グループの 発注が 種類に 分かれる', Sim.groupOrder(sp, 'onigiri') === 400 && Sim.pickSkus(sp, 'onigiri').every(k => sp.orders[k.id] > 0));
+    // 古い セーブ (種類の 前)
+    const old = JSON.parse(JSON.stringify(fresh('onga', 25))); delete old.skuVer;
+    old.stock.onigiri = [{ q: 50, age: 0 }]; old.orders.onigiri = 120; old.prices.onigiri = 150;
+    Sim.migrate(old);
+    const top = Sim.skusOf('onigiri').filter(k => !k.months && !k.launch).sort((a, b) => b.pop - a.pop)[0].id;
+    check('種類の 前の セーブも 読める (いちばん 人気の 種類へ)', old.stock[top].length === 1 && old.stock.onigiri === undefined && Array.isArray(old.launched));
+    // 棚を 調べると 種類ごとに 1 行
+    const si = freshO('onga', 26); Sim.runWeek(si);
+    const inf = Sim.shelfInfo(si, 'onigiri');
+    check('棚を 調べると 種類ごとに 行が ある', inf.rows.length >= 4 && inf.rows.some(r => r.weekSold > 0));
 }
 // 難易度
 {
@@ -245,9 +285,9 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     const s = fresh();
     const r = Sim.runWeek(s);
     check('発注しないと 何も とどかない', Object.values(r.products).every(x => x.ordered === 0 && x.sold === 0));
-    const f = fresh(); f.orders.drink = 3000;
+    const f = fresh(); f.orders[TEA] = 3000;
     const rf = Sim.runWeek(f);
-    check('倉庫が いっぱいだと 受け取れない', rf.products.drink.refused > 0 && Sim.wareUse(f) <= Sim.wareCap(f));
+    check('倉庫が いっぱいだと 受け取れない', rf.products[TEA].refused > 0 && Sim.wareUse(f) <= Sim.wareCap(f));
     const e = fresh(); e.cash = 1e7; const c0 = Sim.wareCap(e), u0 = Sim.upkeep(e);
     check('倉庫を 広げられる (設備代も ふえる)', Sim.expandWare(e) && Sim.wareCap(e) === c0 + C.warehouse.add && Sim.upkeep(e) === u0 + C.warehouse.upkeep);
     // 品出し 係が いると 棚に たくさん 出せる

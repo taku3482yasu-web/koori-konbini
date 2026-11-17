@@ -432,3 +432,42 @@ tr.cat th { text-align: left; padding: 10px 4px 4px; color: var(--gold); font-si
 #modal-box ul { padding-left: 1.2em; }
 @media (max-width: 560px) { .tut { margin: 0 8px 10px; } }
 .order-main thead th { white-space: nowrap; }
+
+/* 商品の 種類 (2026-11-17 ユーザー指定: 指示書 9 章) */
+.orders tr.grp td { background: rgba(143, 220, 255, 0.06); }
+.orders tr.sub td { font-size: 13px; background: rgba(0, 0, 0, 0.15); }
+.orders tr.sub .subname { padding-left: 10px; font-weight: 800; }
+.gtoggle { background: none; border: none; padding: 0; font-weight: 800; font-size: 14px; color: var(--ink); text-align: left; }
+.orders td.price small { color: var(--sub); }
+.tag.lim { color: #ffb36b; margin-left: 4px; }
+.tag.new { color: var(--gold); margin-left: 4px; }
+.tag.boom { color: #ff7a7a; margin-left: 4px; }
+.hot { color: var(--gold); }
+.offer { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0; padding: 10px 12px; border-radius: 10px; background: #2a3a1a; border: 1px solid #6a8a3a; }
+.offer img { width: 40px; height: 40px; image-rendering: pixelated; }
+.offer > div { flex: 1; min-width: 180px; }
+.offer small { display: block; color: var(--sub); font-size: 12px; }
+.offer .btns { display: flex; gap: 6px; }
+.offer .go, .mini.go { background: var(--gold); color: #3a2400; border: none; font-weight: 800; }
+.boom { margin: 8px 0; padding: 8px 12px; border-radius: 10px; background: #4a1a1a; font-size: 14px; }
+.ins-skus { display: grid; gap: 6px; margin: 8px 0; }
+.ins-sku { padding: 6px 8px; border-radius: 8px; background: var(--bg2); font-size: 13px; }
+.ins-sku.empty { opacity: 0.7; }
+.isk-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.isk-head em { font-style: normal; font-size: 12px; }
+.isk-body { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin-top: 4px; color: var(--sub); }
+.isk-body b { color: var(--ink); }
+.isk-body em { font-style: normal; font-size: 11px; }
+.isk-body em.up { color: var(--good); }
+.isk-body em.down { color: var(--bad); }
+.isk-body .qty button { width: 26px; height: 26px; }
+@media (max-width: 640px) {
+    .order-main tbody tr.sub:not([hidden]) { background: rgba(0, 0, 0, 0.15); }
+    .order-main tbody tr.grp td.price { grid-column: 1 / 5; grid-row: 2; }
+}
+.orders .tag { display: inline; padding: 0; background: none; border: none; font-size: 11px; }
+.izukan { display: grid; gap: 6px; font-size: 13px; }
+.izukan span { display: inline-block; margin: 2px 4px 2px 0; padding: 2px 6px; border-radius: 6px; background: var(--bg2); }
+.izukan span.no { color: var(--sub); opacity: 0.6; }
+.izukan small { margin-left: 3px; font-size: 10px; color: var(--gold); }
+.ins-sku .tag { display: inline; padding: 0; background: none; border: none; font-size: 11px; }

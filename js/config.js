@@ -109,6 +109,41 @@
             { id: 'oden', name: 'おでん', icon: '🍢', price: 130, cost: 60, shelf: 1, cap: 80, odenCurve: true, needs: 'oden', cook: true, cat: 'counter' },
             { id: 'nikuman', name: '中華まん', icon: '🥟', price: 160, cost: 65, shelf: 1, cap: 60, odenCurve: true, needs: 'steamer', cook: true, cat: 'counter', rates: [0.12, 0.08, 0.08, 0.12] }
         ],
+        // ----- 商品の 種類 (2026-11-17 ユーザー指定: 指示書 9 章。おにぎりなら 梅・昆布・鮭…) ★ 数値は Claude・名前は ユーザーが 直して いい -----
+        // products は「商品グループ」(棚の 種類・期限・客層ごとの 買う 数は グループで きまる)。ここに 書いた グループは 中に 種類を もつ
+        // [id, 名前, 値段, 仕入れ, 人気 (pop: グループの 客を 種類に 分ける 重み), オプション]
+        // オプション: months = この 月 だけ ならぶ (期間限定)、season = { months, mul } その 月は 人気 ×mul、
+        //   pref = { 地域: 倍率 } (福岡らしさ)、launch = 本部が すすめて くる 新商品 (置くと きめるまで ならばない)
+        varieties: {
+            onigiri: [['ume', '梅', 140, 88, 1.0, { season: { months: [6, 7, 8], mul: 1.25 } }], ['konbu', '昆布', 140, 88, 0.8], ['sake', '鮭', 160, 102, 1.3], ['tunamayo', 'ツナマヨ', 150, 94, 1.4, { pref: { tsugaku: 1.3 } }], ['mentai', '明太子', 170, 110, 1.3], ['takana', '高菜', 150, 95, 0.6, { pref: { onga: 1.4 } }],
+                ['kuri', '栗おこわ', 200, 130, 1.0, { months: [9, 10, 11] }], ['torigomoku', '鶏五目', 170, 108, 0.9, { months: [12, 1, 2] }], ['ebimayo', 'えびマヨ', 170, 108, 1.2, { launch: true }]],
+            bento: [['makunouchi', '幕の内', 560, 390, 0.8, { pref: { kokura: 1.3 } }], ['karaage', 'からあげ', 500, 345, 1.4], ['noriben', 'のり弁', 430, 290, 1.1, { pref: { tsugaku: 1.2 } }], ['hamburg', 'ハンバーグ', 540, 375, 1.0], ['yakiniku', '焼肉', 600, 420, 0.9, { pref: { onga: 1.2 } }],
+                ['unagi', 'うなぎ', 980, 700, 0.8, { months: [7] }], ['osechi', 'おせち', 1500, 1100, 0.5, { months: [12] }], ['nanban', 'チキン南蛮', 560, 385, 1.2, { launch: true }]],
+            sandwich: [['tamago', 'たまご', 300, 195, 1.2], ['hamlettuce', 'ハムレタス', 320, 210, 1.0], ['mix', 'ミックス', 340, 225, 1.0], ['katsu', 'カツ', 380, 255, 0.9, { pref: { kokura: 1.2 } }],
+                ['ichigo', 'いちごサンド', 380, 250, 0.9, { months: [3, 4] }]],
+            bread: [['melon', 'メロンパン', 160, 102, 1.2], ['curry', 'カレーパン', 180, 116, 1.1], ['anpan', 'あんぱん', 150, 96, 0.9], ['yakisoba', '焼きそばパン', 190, 124, 0.9, { pref: { tsugaku: 1.3 } }], ['shokupan', '食パン', 230, 150, 0.6, { pref: { onga: 1.4 } }],
+                ['maritozzo', 'マリトッツォ', 260, 165, 1.1, { launch: true }]],
+            sweets: [['pudding', 'プリン', 260, 160, 1.2], ['choux', 'シュークリーム', 250, 155, 1.1], ['roll', 'ロールケーキ', 340, 212, 0.9], ['dorayaki', 'どら焼き', 250, 155, 0.8],
+                ['ichigo', 'いちごの ケーキ', 380, 240, 1.0, { months: [3, 4] }], ['montblanc', 'モンブラン', 380, 240, 1.0, { months: [9, 10, 11] }], ['xmascake', 'クリスマスケーキ', 600, 380, 1.2, { months: [12] }], ['basque', 'バスクチーズケーキ', 350, 220, 1.2, { launch: true }]],
+            drink: [['tea', 'お茶', 150, 82, 1.3], ['water', '水', 120, 62, 1.0], ['cola', 'コーラ', 160, 90, 1.0, { pref: { tsugaku: 1.2 } }], ['sports', 'スポーツドリンク', 160, 92, 0.9, { season: { months: [6, 7, 8, 9], mul: 1.4 } }], ['cancoffee', '缶コーヒー', 150, 82, 1.0, { pref: { kokura: 1.3, onga: 1.2 } }], ['energy', 'エナジー', 230, 138, 0.6, { pref: { tsugaku: 1.4 } }],
+                ['ramune', 'ラムネ', 160, 90, 0.9, { months: [7, 8] }], ['tapioca', 'タピオカミルクティー', 280, 170, 1.1, { launch: true }]],
+            ice: [['vanilla', 'バニラカップ', 180, 105, 1.0], ['bar', '棒アイス', 150, 85, 1.2], ['kakigori', 'かき氷', 180, 100, 0.6, { season: { months: [7, 8], mul: 2.2 } }], ['monaka', 'チョコモナカ', 200, 118, 1.0],
+                ['daifuku', 'いちご大福アイス', 200, 118, 1.1, { launch: true }]],
+            cupnoodle: [['shoyu', 'しょうゆ', 200, 130, 1.0], ['tonkotsu', 'とんこつ', 230, 150, 1.3], ['yakisoba', 'カップ焼きそば', 220, 145, 0.9, { pref: { tsugaku: 1.2 } }], ['gobouten', 'ごぼう天うどん', 200, 130, 0.9, { pref: { onga: 1.3 } }],
+                ['nabeyaki', '鍋焼きうどん', 330, 215, 0.8, { months: [12, 1, 2] }], ['tantan', '担々めん', 250, 162, 1.1, { launch: true }]],
+            snack: [['potechi', 'ポテチ', 160, 100, 1.3], ['choco', 'チョコ', 140, 88, 1.1], ['gummy', 'グミ', 130, 80, 0.9, { pref: { tsugaku: 1.3 } }], ['senbei', 'せんべい', 160, 100, 0.7, { pref: { onga: 1.2 } }],
+                ['heart', 'ハートチョコ', 300, 190, 1.0, { months: [2] }], ['goukaku', 'ごうかく キット', 250, 160, 0.8, { months: [1, 2] }], ['wasabi', 'わさびポテチ', 170, 106, 1.0, { launch: true }]],
+            hotsnack: [['karaage', 'からあげ', 250, 108, 1.4], ['korokke', 'コロッケ', 150, 62, 0.9], ['frank', 'フランク', 200, 88, 0.9], ['potato', 'ポテト', 230, 98, 0.9, { pref: { tsugaku: 1.2 } }],
+                ['chicken', 'クリスマスチキン', 350, 160, 1.3, { months: [12] }], ['hotdog', 'チーズハットグ', 280, 125, 1.1, { launch: true }]],
+            oden: [['daikon', '大根', 120, 50, 1.3], ['tamago', 'たまご', 120, 52, 1.1], ['konnyaku', 'こんにゃく', 90, 38, 0.8], ['mochikin', 'もち巾着', 160, 75, 0.7], ['gyusuji', '牛すじ', 180, 88, 0.8, { pref: { kokura: 1.2 } }]],
+            nikuman: [['niku', '肉まん', 170, 70, 1.4], ['an', 'あんまん', 150, 60, 0.9], ['pizza', 'ピザまん', 170, 70, 0.8, { pref: { tsugaku: 1.2 } }], ['curry', 'カレーまん', 170, 70, 0.7]]
+        },
+        varietyPerShelf: 5,        // ★ 棚 1 台に 置ける 種類 (もっと 置きたい なら 棚を 増やす)。指示書の 案は 4 だが、4 だと「目安」だけの 遊び方が きびしすぎた (やさしいで クリア 1 割 未満) ので 5
+        substitute: 0.6,           // ★ 欲しい 種類が 品切れの とき 同じ グループの 別の 種類を 買う 客の 割合 (のこりは 帰る)
+        substituteMissing: 0.95,   // ★ 欲しい 種類を 店が そもそも 置いて いない (倉庫にも 棚にも ない・発注 0) ときの 割合。品切れより がまん してくれる
+        // 新商品と ブーム (9-3) ★
+        launch: { chance: 0.35, newWeeks: 4, newMul: 1.5 },   // 毎週 この 確率で 本部 (Mr.SASAKI) が 新商品を すすめて くる (月に 1〜2 回)。発売から newWeeks 週は 人気 ×newMul
+        boom: { chance: 0.08, weeks: [2, 3], mul: 1.6 },     // SNS で ある 種類が 流行る
         // 発注の ページの まとまり
         cats: { food: '食べもの', drink: 'ドリンク・アイス・冷凍', goods: '雑貨・本', counter: 'レジまわり (施設で 売る)' },
         // 棚の 種類 (2026-11-17 ユーザー指定: アイスしか 置けない 棚・飲みもの用の 棚 など)。cost = 1 台、upkeep = 1 台の 毎週の 電気代 ★
@@ -342,6 +377,14 @@
     // あとから ふえた 商品の rates [学生, サラリーマン, 家族連れ, ドライバー] を 客層の rate に 入れる
     const segIds = ['student', 'worker', 'family', 'driver'];
     for (const p of CONFIG.products) if (p.rates) segIds.forEach((g, i) => { CONFIG.segments[g].rate[p.id] = p.rates[i]; });
+    // 種類 (SKU) の 一覧を 作る。種類を もたない グループは グループ そのものが 1 つの 種類 (id も 同じ)
+    // sku = { id: 'onigiri.sake', group: 'onigiri', name: '鮭', full: 'おにぎり 鮭', ...グループの 期限・棚の 種類 など }
+    CONFIG.skus = [];
+    for (const p of CONFIG.products) {
+        const v = CONFIG.varieties[p.id];
+        if (!v) { CONFIG.skus.push({ ...p, group: p.id, full: p.name, pop: 1, single: true }); continue; }
+        for (const [k, name, price, cost, pop, opt = {}] of v) CONFIG.skus.push({ ...p, id: `${p.id}.${k}`, group: p.id, name, full: `${p.name} ${name}`, price, cost, pop, ...opt, rates: undefined });
+    }
     if (typeof module !== 'undefined') module.exports = CONFIG;
     else root.CONFIG = CONFIG;
 })(this);

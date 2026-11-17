@@ -226,7 +226,7 @@ const Scene = (() => {
         const x = c.x + 2, y = c.y + 2, w = c.w - 4, h = c.h - 4;
         g.fillStyle = c1; g.fillRect(x, y, w, h);
         g.fillStyle = c2; g.fillRect(x, c.row % 2 === 0 ? y + h - 4 : y, w, 4);
-        const st = s.stock[p.id] || [];
+        const st = Sim.groupStock(s, p.id).filter(b => b.q > 0).sort((a, b) => b.age - a.age); // 種類を ぜんぶ (古い じゅん)
         const total = st.reduce((a, b) => a + b.q, 0);
         const units = Math.max(1, Sim.shelfUnits(s, p.id));
         const full = Math.min(1, total / Math.max(1, Sim.capOf(s, p)));

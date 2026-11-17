@@ -10,16 +10,18 @@ function staffUp(s, want, prefer) {
     if (pick) Sim.hire(s, pick);
     else Sim.recruit(s);
 }
+// おまかせ 発注: 棚に のる 種類 (人気の じゅん) だけ 目安で (2026-11-17: 種類)
 function autoOrder(s, mul = 1) {
-    for (const p of C.products) if (Sim.available(s, p.id)) s.orders[p.id] = Math.round(Sim.suggest(s, p.id) * mul);
+    for (const k of C.skus) s.orders[k.id] = 0;
+    for (const p of C.products) if (Sim.available(s, p.id)) for (const k of Sim.pickSkus(s, p.id)) s.orders[k.id] = Math.round(Sim.suggest(s, k.id) * mul);
 }
 // 持ち場: いちばん 足りない ところが よく なる ように 1 人ずつ えらびなおす (レジ・品出し・検品・調理)
 function assignRoles(s) {
     const shop = Sim.inShop(s);
     const need = Sim.estSlots(s);
-    const sell = C.products.reduce((a, p) => a + (Sim.available(s, p.id) && !p.cook && !p.self ? Sim.dailyNeed(s, p.id) : 0), 0) * 1.1;
-    const arrive = C.products.reduce((a, p) => a + (Sim.available(s, p.id) ? s.orders[p.id] || 0 : 0), 0);
-    const cookNeed = C.products.reduce((a, p) => a + (Sim.available(s, p.id) && p.cook ? s.orders[p.id] || 0 : 0), 0);
+    const sell = C.skus.reduce((a, p) => a + (Sim.available(s, p.id) && !p.cook && !p.self ? s.orders[p.id] || 0 : 0), 0) * 1.1;
+    const arrive = C.skus.reduce((a, p) => a + (Sim.available(s, p.id) ? s.orders[p.id] || 0 : 0), 0);
+    const cookNeed = C.skus.reduce((a, p) => a + (Sim.available(s, p.id) && p.cook ? s.orders[p.id] || 0 : 0), 0);
     const tot = role => [0, 1, 2].reduce((a, t) => a + Sim.rolePower(s, t, role), 0);
     const score = () => Math.min(...[0, 1, 2].map(t => Sim.rolePower(s, t, 'register') / Math.max(1, need[t] * 1.05)),
         tot('stock') / Math.max(1, sell), tot('check') / Math.max(1, arrive), cookNeed ? tot('cook') / cookNeed : 9);
@@ -44,7 +46,7 @@ function coverSlots(s, slack) {
 
 // 仕入れ値が 動いたら その ぶん 売り値も 動かす (2026-11-17: 自動プレイも 仕入れ値を 見て 売り値を 合わせる)
 function followCost(s, base) {
-    for (const p of C.products) Sim.setPrice(s, p.id, base(p) + (Sim.costOf(s, p.id) - p.cost));
+    for (const p of C.skus) Sim.setPrice(s, p.id, base(p) + (Sim.costOf(s, p.id) - p.cost));
 }
 
 // 何も しない
@@ -79,8 +81,10 @@ function good(s) {
     followCost(s, p => p.price * Math.min(1.1, r.line));
     // 予報で 見つもって 発注
     const info = Sim.weekInfo(s.week);
-    for (const p of C.products) {
-        if (!Sim.available(s, p.id)) continue;
+    // 新商品は 置く (工夫)
+    if (s.offer) Sim.acceptOffer(s, true);
+    for (const k of C.skus) s.orders[k.id] = 0;
+    for (const p of C.products.filter(g => Sim.available(s, g.id)).flatMap(g => Sim.pickSkus(s, g.id))) {
         const base = Sim.dailyNeed(s, p.id);
         let f = 0;
         for (let d = 0; d < 7; d++) {
@@ -93,7 +97,7 @@ function good(s) {
         s.orders[p.id] = p.shelf ? Math.round(day * 1.05) : Math.max(0, Math.round(day + (day * C.keepDays - Sim.stockOf(s, p.id)) / 7));
     }
     const cookCap = [0, 1, 2].reduce((x, t) => x + Sim.rolePower(s, t, 'cook'), 0);
-    const cooked = C.products.filter(p => p.cook && Sim.available(s, p.id));
+    const cooked = C.skus.filter(p => p.cook && Sim.available(s, p.id));
     const cookWant = cooked.reduce((x, p) => x + s.orders[p.id], 0);
     if (cookWant > cookCap) for (const p of cooked) s.orders[p.id] = Math.round(s.orders[p.id] * cookCap / cookWant);
     s.markdown = 0.2;
@@ -125,7 +129,7 @@ function reckless(s) {
     Sim.recruit(s);
     for (const m of Sim.inShop(s)) m.slots = [1, 1, 1];
     autoOrder(s, 2);
-    for (const p of C.products) s.prices[p.id] = Math.round(p.price * 0.7 / 10) * 10;
+    for (const p of C.skus) s.prices[p.id] = Math.round(p.price * 0.7 / 10) * 10;
 }
 
 // 営業中も 手を 打つ (2026-11-17 ユーザー決定: 案B)。週の はじめは 工夫と 同じ
