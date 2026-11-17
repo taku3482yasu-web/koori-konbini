@@ -83,8 +83,24 @@ const Scene = (() => {
         g.fillStyle = '#2b3a4f'; g.fillRect(REG.x + 74, REG.y - 8, 18, 12);
         // スタッフ (店に いる 人は レジの うしろ)
         if (s) {
-            const shop = s.staff.filter(m => m.job === 'shop' && m.slots.some(Boolean));
-            shop.slice(0, 6).forEach((m, i) => Art.draw(g, Sim.staffDef(m.id).art, REG.x - 30 + i * 26, REG.y + 2, { height: 30, frame: Math.floor((t + i * 13) / 28) }));
+            // 倉庫 (左上)。箱の 数で 在庫が 分かる
+            const used = Sim.wareUse(s) / Sim.wareCap(s);
+            g.fillStyle = '#cdbf9f'; g.fillRect(10, 36, 120, 120);
+            g.fillStyle = '#8a7a5a'; g.fillRect(10, 36, 120, 4);
+            g.fillStyle = '#5a4a32'; g.font = '11px "M PLUS Rounded 1c", sans-serif'; g.textAlign = 'left';
+            g.fillText(`倉庫 ${Math.round(used * 100)}%`, 16, 150);
+            const boxes = Math.round(used * 24);
+            for (let i = 0; i < boxes; i++) { g.fillStyle = i % 3 ? '#c8945a' : '#b07a42'; g.fillRect(18 + (i % 6) * 18, 112 - Math.floor(i / 6) * 18, 15, 15); g.fillStyle = '#e8c88a'; g.fillRect(18 + (i % 6) * 18 + 6, 112 - Math.floor(i / 6) * 18, 3, 15); }
+            // スタッフは 持ち場の 場所に 立つ
+            const spot = { register: (i) => [REG.x - 30 + i * 26, REG.y + 2], stock: (i) => [200 + i * 130, 170], check: (i) => [40 + i * 30, 104], cook: (i) => [REG.x + 120 + i * 24, REG.y + 2] };
+            const count = {};
+            s.staff.filter(m => m.job === 'shop' && m.slots.some(Boolean)).forEach((m, k) => {
+                const role = m.role || 'register';
+                const i = count[role] = (count[role] || 0) + 1;
+                const [x, y] = spot[role](i - 1);
+                const sway = role === 'stock' ? Math.sin((t + k * 40) / 50) * 40 : 0;
+                Art.draw(g, Sim.staffDef(m.id).art, x + sway, y, { height: 30, frame: Math.floor((t + k * 13) / 28) });
+            });
             // 施設
             s.facilities.forEach((id, i) => drawFacility(id, SLOT_POS[i]));
             for (let i = s.facilities.length; i < Sim.C.slots; i++) {

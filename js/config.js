@@ -10,7 +10,7 @@
         dayTraffic: [0.95, 0.95, 0.97, 0.98, 1.05, 1.12, 1.08],
         slotNames: ['朝', '昼', '夜'],
 
-        start: { cash: 200000, rep: 40, regulars: 0 },
+        start: { cash: 400000, rep: 40, regulars: 0 },
         royalty: 0.08,             // ★ 本部への 支払い (売上の 割合。Mr.SASAKI は 本部の スーパーバイザー)
 
         // ----- おにおにバンク (企画書: 借金 100 万円・最初の 1 か月は つけ・毎月 返す・利息・追加の 借金は 利息が 上がる) -----
@@ -44,7 +44,7 @@
             },
             {
                 id: 'kokura', name: '小倉駅前', icon: '🚉', text: 'サラリーマンが 多い。高くても 買って くれるが 家賃が 高い。駐車場は 高い',
-                base: { student: 50, worker: 210, family: 25, driver: 25 }, line: 1.15, rent: 100000,
+                base: { student: 50, worker: 190, family: 25, driver: 25 }, line: 1.15, rent: 80000,
                 local: { name: '小倉の 焼うどん', icon: '🍜' },
                 pref: { coffee: 1.3, bento: 1.2, bread: 1.1, snack: 0.8, ice: 0.85 }, parkingMul: 3
             }
@@ -63,18 +63,19 @@
         },
 
         // ----- 商品 (企画書: 値段は 自分で きめる・消費期限で 値下げ) -----
-        // price = ふつうの 値段、shelf = 何日で 期限切れか (0 = 日持ちする)、cap = 棚に おける 数、cook = 調理の うでで 売れかたが かわる
+        // price = ふつうの 値段、shelf = 何日で 期限切れか (0 = 日持ちする)、cap = 売り場の 棚に ならべられる 数 (のこりは 倉庫)、
+        // cook = 調理の 持ち場が 作って ケースへ (うでで 売れかたも かわる)、self = コーヒーマシン (倉庫の 豆から その場で いれる。品出し いらない)
         products: [
-            { id: 'onigiri', name: 'おにぎり', icon: '🍙', price: 150, cost: 95, shelf: 2, cap: 400 },
-            { id: 'bento', name: 'お弁当', icon: '🍱', price: 520, cost: 360, shelf: 2, cap: 200 },
-            { id: 'bread', name: 'パン', icon: '🥐', price: 170, cost: 110, shelf: 3, cap: 300 },
-            { id: 'drink', name: 'ドリンク', icon: '🥤', price: 150, cost: 85, shelf: 0, cap: 900, temp: [0.7, 0.017] },
-            { id: 'snack', name: 'お菓子', icon: '🍫', price: 150, cost: 95, shelf: 0, cap: 500 },
-            { id: 'daily', name: '日用品・雑誌', icon: '🧴', price: 350, cost: 250, shelf: 0, cap: 250 },
-            { id: 'ice', name: 'アイス', icon: '🍦', price: 180, cost: 105, shelf: 0, cap: 300, iceCurve: true },
-            { id: 'coffee', name: 'いれたてコーヒー', icon: '☕', price: 150, cost: 45, shelf: 0, cap: 600, needs: 'coffee' },
-            { id: 'hotsnack', name: 'ホットスナック', icon: '🍗', price: 220, cost: 95, shelf: 1, cap: 200, temp: [1.2, -0.012], needs: 'fryer', cook: true },
-            { id: 'oden', name: 'おでん', icon: '🍢', price: 130, cost: 60, shelf: 1, cap: 250, odenCurve: true, needs: 'oden', cook: true }
+            { id: 'onigiri', name: 'おにぎり', icon: '🍙', price: 150, cost: 95, shelf: 2, cap: 120 },
+            { id: 'bento', name: 'お弁当', icon: '🍱', price: 520, cost: 360, shelf: 2, cap: 70 },
+            { id: 'bread', name: 'パン', icon: '🥐', price: 170, cost: 110, shelf: 3, cap: 90 },
+            { id: 'drink', name: 'ドリンク', icon: '🥤', price: 150, cost: 85, shelf: 0, cap: 300, temp: [0.7, 0.017] },
+            { id: 'snack', name: 'お菓子', icon: '🍫', price: 150, cost: 95, shelf: 0, cap: 160 },
+            { id: 'daily', name: '日用品・雑誌', icon: '🧴', price: 350, cost: 250, shelf: 0, cap: 90 },
+            { id: 'ice', name: 'アイス', icon: '🍦', price: 180, cost: 105, shelf: 0, cap: 90, iceCurve: true },
+            { id: 'coffee', name: 'いれたてコーヒー', icon: '☕', price: 150, cost: 45, shelf: 0, cap: 9999, self: true, needs: 'coffee' },
+            { id: 'hotsnack', name: 'ホットスナック', icon: '🍗', price: 220, cost: 95, shelf: 1, cap: 60, temp: [1.2, -0.012], needs: 'fryer', cook: true },
+            { id: 'oden', name: 'おでん', icon: '🍢', price: 130, cost: 60, shelf: 1, cap: 80, odenCurve: true, needs: 'oden', cook: true }
         ],
         priceStep: 10,
         priceRange: [0.6, 1.6],    // 値段を つけられる はば (ふつうの 何倍)
@@ -118,26 +119,41 @@
         baseUpkeep: 30000,         // ★ 店の 基本の 設備 (レジ・冷蔵の 棚・照明) の 電気代・リース
 
         // ----- スタッフ (企画書: シリーズの キャラ・接客/品出し/調理/ダンジョンの 得意不得意・シフト・給料と やる気) ★ -----
-        // st = [接客, 品出し, 調理, 探索] (1〜5)。pay = 時給 (2026-11-17 ユーザー: アルバイトを 募集・給料を 払う)。
+        // st = [接客, 品出し, 検品, 調理, 探索] (1〜5)。pay = 時給 (2026-11-17 ユーザー: アルバイトを 募集・給料を 払う)。
         // 1 コマ = 1 日 hoursPerSlot 時間 × 7 日。給料は 毎週 はらう。ダンジョンの あいだも 2 コマぶん はらう
         staff: [
-            { id: 'koori', name: 'こおりくん', art: 'koori', st: [3, 3, 2, 2], pay: 0, boss: true, text: '店長。就活に 失敗した' },
-            { id: 'yasu', name: 'やす', art: 'yasu', st: [3, 2, 2, 4], pay: 1000, text: 'やすパンチで ダンジョンも こなす' },
-            { id: 'tamu', name: 'たむ', art: 'tamu', st: [2, 4, 3, 3], pay: 1000, text: '品出しが はやい' },
-            { id: 'dake', name: 'だけ', art: 'dake', st: [2, 2, 4, 4], pay: 1000, text: '調理と 探索が 得意' },
-            { id: 'kotani', name: 'こたに', art: 'kotani', st: [5, 3, 2, 1], pay: 1300, text: '接客の プロ。ダンジョンは にがて' },
-            { id: 'yamamou', name: 'やまもぅ', art: 'yamamou', st: [2, 3, 5, 2], pay: 1200, text: '料理が うまい' },
-            { id: 'ishii', name: 'イシイー', art: 'ishii', st: [1, 2, 2, 5], pay: 950, text: '遺跡の 達人。お店は にがて' },
-            { id: 'ikekimu', name: 'いけきむ', art: 'ikekimu', st: [3, 4, 2, 3], pay: 1100, text: 'なんでも そつなく' },
-            { id: 'ueno', name: 'マッスルウエノーブル', art: 'ueno', st: [2, 5, 1, 5], pay: 1400, text: '筋肉で 品出しも 探索も' }
+            { id: 'koori', name: 'こおりくん', art: 'koori', st: [3, 3, 3, 2, 2], pay: 0, boss: true, text: '店長。就活に 失敗した' },
+            { id: 'yasu', name: 'やす', art: 'yasu', st: [3, 2, 2, 2, 4], pay: 1000, text: 'やすパンチで ダンジョンも こなす' },
+            { id: 'tamu', name: 'たむ', art: 'tamu', st: [2, 4, 3, 3, 3], pay: 1000, text: '品出しが はやい' },
+            { id: 'dake', name: 'だけ', art: 'dake', st: [2, 2, 2, 4, 4], pay: 1000, text: '調理と 探索が 得意' },
+            { id: 'kotani', name: 'こたに', art: 'kotani', st: [5, 3, 2, 2, 1], pay: 1300, text: '接客の プロ。ダンジョンは にがて' },
+            { id: 'yamamou', name: 'やまもぅ', art: 'yamamou', st: [2, 3, 2, 5, 2], pay: 1200, text: '料理が うまい' },
+            { id: 'ishii', name: 'イシイー', art: 'ishii', st: [1, 2, 4, 2, 5], pay: 950, text: '遺跡の 達人。お店は にがて' },
+            { id: 'ikekimu', name: 'いけきむ', art: 'ikekimu', st: [3, 4, 4, 2, 3], pay: 1100, text: 'なんでも そつなく' },
+            { id: 'ueno', name: 'マッスルウエノーブル', art: 'ueno', st: [2, 5, 2, 1, 5], pay: 1400, text: '筋肉で 品出しも 探索も' }
         ],
         startStaff: ['koori', 'yasu'],
         hoursPerSlot: 5,
         // アルバイト募集 (2026-11-17 ユーザー指定): 求人を 出すと つぎの 週に 応募が 来る。その 週の うちに やとわないと ほかへ 行く
         recruit: { cost: 20000, min: 1, max: 3 },
         maxStaff: 6,               // こおりくんを ふくめて
-        serve: 40,                 // 接客 1 で 1 コマに さばける 客
-        stock: 60,                 // 品出し 1 で 1 コマに 棚に 出せる 客の ぶん
+        // ----- 持ち場 (2026-11-17 ユーザー指定: スタッフの 中でも 役割が ある。向き 不向きは スタッフで ちがうが、どこに 置くかは 自分で きめる) -----
+        // stat = つかう 能力 (st の 番号)。ほかの 持ち場の 人も roleHelp だけ 手伝う ★
+        roles: {
+            register: { name: 'レジ', icon: '🧾', stat: 0, text: '接客。足りないと 客が 帰る' },
+            stock: { name: '品出し', icon: '📦', stat: 1, text: '倉庫から 棚へ。足りないと 倉庫に あるのに 棚が 空' },
+            check: { name: '検品', icon: '📋', stat: 2, text: 'とどいた 商品を 受け取って 倉庫へ。足りないと 品出し できない' },
+            cook: { name: '調理', icon: '🍳', stat: 3, text: 'ホットスナック・おでんを 作る。うでで 売れかたも かわる' }
+        },
+        roleHelp: 0.3,
+        spareWork: 0.8,            // ★ レジが ひまな 時間の この 割合で 検品・品出しも する
+        serve: 60,                 // ★ 接客 1 で 1 コマに さばける 客
+        stockPer: 130,             // ★ 品出し 1 で 1 コマに 棚へ 出せる 数
+        checkPer: 220,             // ★ 検品 1 で 1 コマに 受け取れる 数
+        cookPer: 40,               // ★ 調理 1 で 1 コマに 作れる 数
+        // 倉庫 (2026-11-17 ユーザー指定: 倉庫に 入れて おける。商品は 発注しないと とどかない) ★ 数は Claude
+        keepDays: 2,               // ★「目安」は 日持ちする 商品を 倉庫に この 日数ぶん のこす
+        warehouse: { cap: 5000, add: 2500, cost: 300000, upkeep: 5000, max: 2 },
         trio: ['yasu', 'tamu', 'dake'], // 3 人 そろうと 連携ボーナス (店に いる 3 人の 能力 +1)
         mood: { start: 70, work: [12, 5, 0, -12], tired: 0.7, low: 30, lowMul: 0.75, quit: 8 }, // 0〜3 コマの やる気の 増減
 
@@ -184,7 +200,7 @@
             { week: 4, name: 'おかおか どんたく', traffic: 1.35, text: 'まちじゅう お祭り。ドリンクと おにぎりが 売れる', boost: { drink: 1.3, onigiri: 1.2 } },
             { week: 13, name: '山かさ', traffic: 1.2, text: '朝早くから 人が 集まる。お弁当・おにぎりが 売れる', boost: { bento: 1.2, onigiri: 1.2 } },
             { week: 14, name: '山かさ (追い山)', traffic: 1.25, boost: { bento: 1.2, onigiri: 1.3, drink: 1.2 } },
-            { week: 17, name: '夏休み', traffic: 1.0, seg: { student: 1.3, worker: 0.9 }, boost: { ice: 1.2, snack: 1.15 } },
+            { week: 17, name: '夏休み', traffic: 1.0, seg: { student: 1.15, worker: 0.9 }, boost: { ice: 1.2, snack: 1.15 } },
             { week: 18, name: '夏祭り・花火大会', traffic: 1.35, text: '夜の 客が どっと くる。ドリンク・アイス 大人気', boost: { drink: 1.4, ice: 1.4, hotsnack: 1.2 } },
             { week: 19, name: 'お盆', traffic: 0.92, text: '帰省で まちの 人が へる' },
             { week: 23, name: 'ほうじょうや (秋祭り)', traffic: 1.2, boost: { drink: 1.2, snack: 1.2 } },
@@ -210,12 +226,12 @@
         // ★ 点 = 直近 4 週の 売上の 平均 (万円) + 評判 × 0.5。daily ではなく 1 週の 売上 (年の はじめ)、grow = 1 年で のびる 割合
         rankWeeks: 4,
         rivals: [
-            { name: 'KING.ASAHARA チェーン 小倉本店', owner: 'asahara', boss: 'KING.ASAHARA', weekly: 2400000, grow: 0.3, rep: 85, line: 'おかおかの 王は この KING.ASAHARA だ！' },
-            { name: 'ハリーストア', owner: 'harigeneral', boss: 'ハリージェネラル', weekly: 2000000, grow: 0.15, rep: 70, line: '森の 王が コンビニでも 天下を とる' },
-            { name: 'リュウソン', owner: 'hyougaryu', boss: 'ヒョウガリュウ', weekly: 1650000, grow: 0.1, rep: 65, line: '氷の 竜の 店に かなう ものか' },
-            { name: 'ネオンたぬき 24', owner: 'neontanuki', boss: 'ネオンたぬき', weekly: 1400000, grow: 0.12, rep: 55, line: '夜は ぜんぶ たぬきの もの' },
-            { name: 'ゆきうさマート', owner: 'yukiusapon', boss: 'ゆきうさぽん', weekly: 1200000, grow: 0.15, rep: 60, line: 'ぴょん！ まけないぴょん' },
-            { name: 'ペコリスストア', owner: 'pekorisu', boss: 'ペコリス', weekly: 1000000, grow: 0.1, rep: 50, line: 'ぺこり。よろしく おねがいします' }
+            { name: 'KING.ASAHARA チェーン 小倉本店', owner: 'asahara', boss: 'KING.ASAHARA', weekly: 1800000, grow: 0.3, rep: 85, line: 'おかおかの 王は この KING.ASAHARA だ！' },
+            { name: 'ハリーストア', owner: 'harigeneral', boss: 'ハリージェネラル', weekly: 1650000, grow: 0.15, rep: 70, line: '森の 王が コンビニでも 天下を とる' },
+            { name: 'リュウソン', owner: 'hyougaryu', boss: 'ヒョウガリュウ', weekly: 1350000, grow: 0.1, rep: 65, line: '氷の 竜の 店に かなう ものか' },
+            { name: 'ネオンたぬき 24', owner: 'neontanuki', boss: 'ネオンたぬき', weekly: 1150000, grow: 0.12, rep: 55, line: '夜は ぜんぶ たぬきの もの' },
+            { name: 'ゆきうさマート', owner: 'yukiusapon', boss: 'ゆきうさぽん', weekly: 1000000, grow: 0.15, rep: 60, line: 'ぴょん！ まけないぴょん' },
+            { name: 'ペコリスストア', owner: 'pekorisu', boss: 'ペコリス', weekly: 850000, grow: 0.1, rep: 50, line: 'ぺこり。よろしく おねがいします' }
         ]
     };
     if (typeof module !== 'undefined') module.exports = CONFIG;

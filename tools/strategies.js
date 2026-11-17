@@ -13,6 +13,22 @@ function staffUp(s, want, prefer) {
 function autoOrder(s, mul = 1) {
     for (const p of C.products) if (Sim.available(s, p.id)) s.orders[p.id] = Math.round(Sim.suggest(s, p.id) * mul);
 }
+// 持ち場: いちばん 足りない ところが よく なる ように 1 人ずつ えらびなおす (レジ・品出し・検品・調理)
+function assignRoles(s) {
+    const shop = Sim.inShop(s);
+    const need = Sim.estSlots(s);
+    const sell = C.products.reduce((a, p) => a + (Sim.available(s, p.id) && !p.cook && !p.self ? Sim.dailyNeed(s, p.id) : 0), 0) * 1.1;
+    const arrive = C.products.reduce((a, p) => a + (Sim.available(s, p.id) ? s.orders[p.id] || 0 : 0), 0);
+    const cookNeed = C.products.reduce((a, p) => a + (Sim.available(s, p.id) && p.cook ? s.orders[p.id] || 0 : 0), 0);
+    const tot = role => [0, 1, 2].reduce((a, t) => a + Sim.rolePower(s, t, role), 0);
+    const score = () => Math.min(...[0, 1, 2].map(t => Sim.rolePower(s, t, 'register') / Math.max(1, need[t] * 1.05)),
+        tot('stock') / Math.max(1, sell), tot('check') / Math.max(1, arrive), cookNeed ? tot('cook') / cookNeed : 9);
+    for (let pass = 0; pass < 2; pass++) for (const m of shop) {
+        let best = m.role, bs = -1;
+        for (const role of Object.keys(C.roles)) { m.role = role; const v = score(); if (v > bs + 1e-9) { bs = v; best = role; } }
+        m.role = best;
+    }
+}
 // 手うすな コマに 人を 入れる (やる気が 下がりすぎない ように 2 コマ まで)
 function coverSlots(s, slack) {
     const need = Sim.estSlots(s);
@@ -34,13 +50,14 @@ function normal(s) {
     autoOrder(s);
     for (const f of [...C.facilities].sort((a, b) => a.cost - b.cost)) if (s.cash > Sim.facCost(s, f.id) + 300000) Sim.buyFacility(s, f.id);
     const need = Sim.estSlots(s);
-    staffUp(s, [0, 1, 2].some(t => Sim.slotCap(s, t) < need[t]) && s.cash > 200000);
+    staffUp(s, s.cash > 150000 && (s.staff.length < 3 || [0, 1, 2].some(t => Sim.slotCap(s, t) < need[t])));
+    assignRoles(s);
     coverSlots(s, 1.0);
 }
 
 // じょうず: 地域に 合う 施設・ダンジョン・限定商品・連携・値段・天気を 見た 発注・はやめの 返済
 const PLAN = {
-    tsugaku: ['fryer', 'wifi', 'eatin', 'atm'],
+    tsugaku: ['fryer', 'wifi', 'fridge', 'eatin'],
     onga: ['parking', 'oden', 'fryer', 'atm'],
     kokura: ['coffee', 'smoke', 'eatin', 'atm']
 };
@@ -53,7 +70,7 @@ function good(s) {
     const info = Sim.weekInfo(s.week);
     for (const p of C.products) {
         if (!Sim.available(s, p.id)) continue;
-        const base = Sim.suggest(s, p.id);
+        const base = Sim.dailyNeed(s, p.id);
         let f = 0;
         for (let d = 0; d < 7; d++) {
             const fc = s.forecast[d];
@@ -61,24 +78,31 @@ function good(s) {
         }
         const last = s.history.length ? s.history[s.history.length - 1].products[p.id] : null;
         const fix = last && last.open ? 1 : 1;
-        s.orders[p.id] = Math.round(base * fix * (f / 7) * (p.shelf ? 1.05 : 1.2));
+        const day = base * fix * (f / 7);
+        s.orders[p.id] = p.shelf ? Math.round(day * 1.05) : Math.max(0, Math.round(day + (day * C.keepDays - Sim.stockOf(s, p.id)) / 7));
     }
+    const cookCap = [0, 1, 2].reduce((x, t) => x + Sim.rolePower(s, t, 'cook'), 0);
+    const cooked = C.products.filter(p => p.cook && Sim.available(s, p.id));
+    const cookWant = cooked.reduce((x, p) => x + s.orders[p.id], 0);
+    if (cookWant > cookCap) for (const p of cooked) s.orders[p.id] = Math.round(s.orders[p.id] * cookCap / cookWant);
     s.markdown = 0.2;
     // スタッフ: 3 人 そろえる → 足りなければ 接客の 強い 人
     const want = ['tamu', 'dake', 'kotani', 'yamamou', 'ueno'];
     const need = Sim.estSlots(s);
-    staffUp(s, s.cash > 300000 && ([0, 1, 2].some(t => Sim.slotCap(s, t) < need[t] * 1.05) || s.staff.length < 4), want);
+    const lastP = s.history.length ? s.history[s.history.length - 1].profit : 0;
+    staffUp(s, s.cash > 200000 && (s.staff.length < 3 || ([0, 1, 2].some(t => Sim.slotCap(s, t) < need[t] * 1.05) && lastP > 0)), want);
     // ダンジョン: 探索の 得意な 人を 1 人 (やる気が ある とき)
     const diver = s.staff.find(m => ['dake', 'ueno', 'yasu'].includes(m.id) && m.job === 'shop' && m.mood > 45 && !m.tired);
     if (diver && s.staff.length >= 4) Sim.sendDungeon(s, diver.id, s.week > 20 ? 'moon' : 'coast');
+    assignRoles(s);
     coverSlots(s, 1.1);
     // アイテム・限定商品
     for (const k of ['maneki', 'hieishi']) if (s.items[k] && !s.effects[k]) Sim.useItem(s, k);
     if (s.items.genki && s.staff.some(m => m.mood < 40)) Sim.useItem(s, 'genki');
     for (const rc of [...C.recipes].reverse()) while (Sim.craftable(s, rc.id) && (s.craft[rc.id] || 0) < 3) Sim.addCraft(s, rc.id, 1);
     // 連携と 返済
-    if (s.cash > 600000 && s.facilities.length >= 3) Sim.setPartner(s, 'ad', true);
-    if (s.cash > 400000) Sim.setPartner(s, 'farm', true);
+    Sim.setPartner(s, 'ad', s.cash > 600000 && s.facilities.length >= 3 && lastP > 100000);
+    Sim.setPartner(s, 'farm', s.cash > 400000 && lastP > 50000);
     if (info.event && s.cash > 500000) Sim.bookEvent(s, 5);
     if (s.cash > 900000) Sim.repay(s, s.cash - 700000);
 }

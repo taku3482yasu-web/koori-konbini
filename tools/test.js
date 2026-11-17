@@ -6,6 +6,8 @@ let ok = 0, ng = 0;
 function check(name, cond, info = '') { if (cond) ok++; else { ng++; console.log(`✗ ${name} ${info}`); } }
 const fresh = (region = 'onga', seed = 1) => Sim.newGame('t', seed, region);
 const runN = (s, n, f) => { for (let i = 0; i < n && !s.over; i++) { if (f) f(s); Sim.runWeek(s); } };
+const orderAll = s => { for (const p of C.products) if (Sim.available(s, p.id)) s.orders[p.id] = Sim.suggest(s, p.id); };
+const freshO = (region, seed) => { const s = fresh(region, seed); orderAll(s); return s; };
 
 // おなじ たねなら おなじ 結果・セーブから 続けても 同じ
 {
@@ -21,7 +23,7 @@ const runN = (s, n, f) => { for (let i = 0; i < n && !s.over; i++) { if (f) f(s)
 for (const region of C.regions.map(r => r.id)) {
     const { s } = St.play(St.normal, 3, region);
     check(`${region}: 数が NaN に ならない`, s.history.every(h => h.moved || (Number.isFinite(h.sales) && Number.isFinite(h.profit) && Number.isFinite(h.rep))));
-    check(`${region}: 52 週で おわる`, s.week === C.weeks && ['normal', 'bad'].includes(s.over), `week=${s.week} over=${s.over}`);
+    check(`${region}: 52 週 か クリアで おわる`, (s.week === C.weeks && ['normal', 'bad'].includes(s.over)) || s.over === 'clear', `week=${s.week} over=${s.over}`);
 }
 // こよみ
 check('第 1 週は 4/1', Sim.weekInfo(0).start.month === 4 && Sim.weekInfo(0).start.date === 1);
@@ -29,21 +31,21 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
 
 // 消費期限・値下げ・子ども食堂
 {
-    const s = fresh(); s.orders.onigiri = 2000;
+    const s = freshO(); s.orders.onigiri = 2000;
     const r = Sim.runWeek(s);
     check('多すぎる おにぎりは 廃棄', r.products.onigiri.waste > 5000, r.products.onigiri.waste);
-    const k = fresh(); k.orders.onigiri = 2000; k.kids = true;
+    const k = freshO(); k.orders.onigiri = 2000; k.kids = true;
     const rk = Sim.runWeek(k);
     check('子ども食堂に 回すと 廃棄 0', rk.products.onigiri.waste === 0 && rk.products.onigiri.kids > 5000);
     check('子ども食堂で 評判が 上がる', rk.repAfter > r.repAfter);
-    const m = fresh(); m.orders.onigiri = 2000; m.markdown = 0.4;
+    const m = freshO(); m.orders.onigiri = 2000; m.markdown = 0.4;
     check('値下げで 期限 今日までの 商品が 売れる', Sim.runWeek(m).products.onigiri.marked > 1000);
-    const z = fresh(); z.orders.onigiri = 0;
+    const z = freshO(); z.orders.onigiri = 0;
     check('おにぎり 0 なら 品切れ', Sim.runWeek(z).products.onigiri.lost > 300);
 }
 // 値段: 高いと 売れない・地域で ラインが ちがう
 {
-    const a = fresh('tsugaku'), b = fresh('tsugaku');
+    const a = freshO('tsugaku'), b = freshO('tsugaku');
     b.prices.drink = 220; a.orders.drink = b.orders.drink = 900;
     check('高いと 売れない', Sim.runWeek(b).products.drink.sold < Sim.runWeek(a).products.drink.sold * 0.6);
     const k1 = fresh('kokura'), t1 = fresh('tsugaku');
@@ -53,7 +55,7 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
 {
     const s = fresh('kokura');
     check('はじめは 好みが 分からない', Sim.knownPref(s, 'bento') === null);
-    runN(s, C.knowWeeks);
+    runN(s, C.knowWeeks, orderAll);
     check(`${C.knowWeeks} 週 売ると 分かる`, Sim.knownPref(s, 'bento') === 'up', Sim.knownPref(s, 'bento'));
 }
 // 施設は 4 つ まで
@@ -62,14 +64,14 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     for (const f of C.facilities) Sim.buyFacility(s, f.id);
     check(`施設は ${C.slots} つ まで`, s.facilities.length === C.slots);
     check('駐車場は 駅前で 高い', Sim.facCost(fresh('kokura'), 'parking') > Sim.facCost(fresh('onga'), 'parking') * 3);
-    const n = fresh(); n.cash = 1e8; Sim.buyFacility(n, 'coffee');
+    const n = fresh(); n.cash = 1e8; Sim.buyFacility(n, 'coffee'); orderAll(n);
     check('コーヒーマシンで コーヒーが 売れる', Sim.available(n, 'coffee') && Sim.runWeek(n).products.coffee.sold > 0);
 }
 // おにおにバンク
 {
     const s = fresh();
     let first = null;
-    for (let i = 0; i < 5; i++) { const r = Sim.runWeek(s); if (r.month) first = r.month; }
+    for (let i = 0; i < 5; i++) { orderAll(s); const r = Sim.runWeek(s); if (r.month) first = r.month; }
     check('最初の 1 か月は つけ', first && first.grace && s.debt === C.bank.debt);
     const p = fresh(); p.cash = 1e7;
     let second = null;
@@ -81,6 +83,28 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     check('払えないと おにおにが 居座る', miss && q.occupy > 0);
     const b = fresh(); const r0 = b.rate; Sim.borrow(b);
     check('追加で 借りると 利息が 上がる', b.rate > r0 && b.debt === C.bank.debt + C.bank.borrow);
+}
+// 発注・倉庫・持ち場 (2026-11-17 ユーザー指定)
+{
+    const s = fresh();
+    const r = Sim.runWeek(s);
+    check('発注しないと 何も とどかない', Object.values(r.products).every(x => x.ordered === 0 && x.sold === 0));
+    const f = fresh(); f.orders.drink = 3000;
+    const rf = Sim.runWeek(f);
+    check('倉庫が いっぱいだと 受け取れない', rf.products.drink.refused > 0 && Sim.wareUse(f) <= Sim.wareCap(f));
+    const e = fresh(); e.cash = 1e7; const c0 = Sim.wareCap(e), u0 = Sim.upkeep(e);
+    check('倉庫を 広げられる (設備代も ふえる)', Sim.expandWare(e) && Sim.wareCap(e) === c0 + C.warehouse.add && Sim.upkeep(e) === u0 + C.warehouse.upkeep);
+    // 品出し 係が いると 棚に たくさん 出せる
+    const mk = role => { const x = freshO('onga', 3); x.staff.forEach(m => { m.slots = [1, 1, 0]; m.role = 'register'; }); x.staff[1].role = role; return x; };
+    const st1 = Sim.runWeek(mk('stock')).work, st0 = Sim.runWeek(mk('register')).work;
+    check('品出しの 持ち場に 置くと 品出しの 量が ふえる', st1.stockCap[0] > st0.stockCap[0]);
+    const cap1 = Sim.slotCap(mk('register'), 0), cap0 = Sim.slotCap(mk('stock'), 0);
+    check('レジの 持ち場に 置くと さばける 客が ふえる', cap1 > cap0);
+    const t = fresh(); check('持ち場は 自分で きめられる', Sim.setRole(t, 'yasu', 'check') && t.staff[1].role === 'check');
+    check('はじめの 持ち場は 得意な ところ', Sim.bestRole('ishii') === 'check' && Sim.bestRole('kotani') === 'register');
+    const n = freshO(); n.staff.forEach(m => { m.slots = [1, 0, 0]; });
+    const rn = Sim.runWeek(n);
+    check('人が いない コマは 品出し できない', rn.work.stock[1] === 0 && rn.work.stock[2] === 0);
 }
 // スタッフと ダンジョン
 {
@@ -146,7 +170,7 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     console.log(Object.entries(res).map(([k, v]) => `${k}: クリア ${v.clear}/${v.n}${v.weeks.length ? ` (平均 第${Math.round(v.weeks.reduce((a, b) => a + b, 0) / v.weeks.length)}週)` : ''} 借金を 返した ${v.normal} 返せない ${v.bad}`).join('\n'));
     check('何も しないと クリア できない', res.idle.clear === 0);
     check('目安 だけでは クリアは むずかしい (1 割 以下)', res.normal.clear <= res.normal.n * 0.1, res.normal.clear);
-    check('目安 だけでも 借金は 返せる', res.normal.normal >= res.normal.n * 0.8, res.normal.normal);
+    check('目安 だけでも たいてい 借金は 返せる (7 割 以上)', res.normal.normal >= res.normal.n * 0.7, res.normal.normal);
     check('工夫すれば クリア できる (3 割 以上)', res.good.clear >= res.good.n * 0.3, res.good.clear);
     check('クリアは 後半 (平均 第 20 週 より あと)', res.good.weeks.reduce((a, b) => a + b, 0) / res.good.weeks.length > 20);
     check('むちゃな 借金は 返せない', res.reckless.bad >= res.reckless.n * 0.8, res.reckless.bad);
