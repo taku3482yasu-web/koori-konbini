@@ -303,6 +303,7 @@
         // ----- コンビニランキング (企画書: 毎週 発表・最後の 壁は KING.ASAHARA の チェーン) -----
         // ★ 点 = 直近 4 週の 売上の 平均 (万円) + 評判 × 0.5。daily ではなく 1 週の 売上 (年の はじめ)、grow = 1 年で のびる 割合
         rankWeeks: 4,
+        endlessRivalGrow: 0.25,    // ★ エンドレスの 2 年目 から ライバルが のびる はやさ (1 年目の 何倍)
         rivals: [
             { name: 'KING.ASAHARA チェーン 小倉本店', owner: 'asahara', boss: 'KING.ASAHARA', weekly: 1800000, grow: 0.3, rep: 85, line: 'おかおかの 王は この KING.ASAHARA だ！' },
             { name: 'ハリーストア', owner: 'harigeneral', boss: 'ハリージェネラル', weekly: 1650000, grow: 0.15, rep: 70, line: '森の 王が コンビニでも 天下を とる' },

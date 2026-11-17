@@ -130,6 +130,8 @@ check('4/29〜5/5 の 週で 4 月が おわる', Sim.monthEnds(4) && !Sim.month
     check('エンドレスでも 数が こわれない', s.history.every(h => h.moved || Number.isFinite(h.sales)));
     const c = St.play(St.good, 3, 'kokura', 'normal', 'endless', 60).s;
     check('エンドレスは 1 位に なっても おわらない', !c.over);
+    const top = w => { const x = Sim.newGame('t', 1, 'onga', 'normal', 'endless'); x.week = w; Sim.runWeek(x); return x.rivals[0].sales[0]; };
+    check('エンドレスの 2 年目 から ライバルの のびは ゆっくり', (top(156) - top(52)) < (top(52) - top(0)));
 
     const e = fresh(); e.cash = 1e8; e.rep = 30;
     check('評判が 足りないと 店を 大きく できない', !Sim.expandStore(e));

@@ -707,7 +707,9 @@
         for (let i = 0; i < C.rivals.length; i++) {
             const cr = C.rivals[i], rv = s.rivals[i];
             const ev = info.event ? info.event.traffic : 1; // ライバルも 行事で 客が ふえる
-            rv.sales.push(Math.round(cr.weekly * diffOf(s).rival * (1 + cr.grow * s.week / C.weeks) * C.seasonTraffic[info.mi] * ev * (0.96 + rand(s) * 0.08)));
+            // エンドレスの 2 年目 から ライバルの のびは ゆっくり (endlessRivalGrow 倍)
+            const gw = s.week <= C.weeks ? s.week : C.weeks + (s.week - C.weeks) * C.endlessRivalGrow;
+            rv.sales.push(Math.round(cr.weekly * diffOf(s).rival * (1 + cr.grow * gw / C.weeks) * C.seasonTraffic[info.mi] * ev * (0.96 + rand(s) * 0.08)));
             if (rv.sales.length > C.rankWeeks) rv.sales.shift();
         }
 
